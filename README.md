@@ -1,1 +1,1 @@
-# BlogPublisherAI-
+# DailyDevDigestAi
