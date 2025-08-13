@@ -1,111 +1,114 @@
 """Модуль фактчекинга."""
 from __future__ import annotations
 
+import ast
+import html
+import logging
 import re
-from typing import List
+from typing import List, Tuple
 
 import requests
+from bs4 import BeautifulSoup
 
-from .config import google_search_config
-
-
-def _extract_code_blocks(article: str) -> list[tuple[str, str]]:
-    """Находит блоки тройных бэктиков и возвращает список (lang, code)."""
-    pattern = re.compile(r"```(\w+)?\n([\s\S]*?)```", re.MULTILINE)
-    results: list[tuple[str, str]] = []
-    for m in pattern.finditer(article):
-        lang = (m.group(1) or "").strip().lower()
-        code = m.group(2)
-        results.append((lang, code))
-    return results
+from .config import Config
 
 
-def _lint_python(code: str) -> bool:
-    """Простейшая проверка: компилируется ли код Python."""
+def validate_code_blocks(article_html: str) -> List[str]:
+    errors: List[str] = []
     try:
-        compile(code, "<article_snippet>", "exec")
-        return True
-    except Exception:
-        return False
+        soup = BeautifulSoup(article_html, "html.parser")
+        for pre in soup.find_all("pre"):
+            code = pre.find("code")
+            if not code:
+                continue
+            cls = code.get("class", [])
+            code_text = code.get_text()
+            if any("python" in c for c in cls):
+                try:
+                    ast.parse(code_text)
+                except Exception as e:
+                    errors.append(f"Ошибка Python-кода: {html.escape(str(e))}")
+    except Exception as e:
+        errors.append(f"Парсинг HTML не удался: {e}")
+    return errors
 
 
-def validate_article(article: str) -> bool:
-    """Проверяет корректность фактов и работоспособность кода.
+def _run_python_in_sandbox(code: str) -> Tuple[bool, str]:
+    """Запуск короткого Python-кода в публичной песочнице Piston API.
 
-    MVP-проверки:
-    - Python-блоки компилируются
-    - Отсутствуют TODO-рыбы
+    Ограничим длину кода и не отправляем, если код потенциально опасен (import os, subprocess, requests, etc.).
     """
-    blocks = _extract_code_blocks(article)
-    for lang, code in blocks:
-        if lang in {"py", "python"} and not _lint_python(code):
-            return False
+    if len(code) > 1000:
+        return True, "skipped"
+    banned = ["import os", "import sys", "subprocess", "open(", "requests."]
+    if any(b in code for b in banned):
+        return True, "skipped"
+    try:
+        payload = {
+            "language": "python",
+            "version": "3.10.0",
+            "files": [{"name": "main.py", "content": code}],
+            "stdin": "",
+        }
+        r = requests.post("https://emkc.org/api/v2/piston/execute", json=payload, timeout=20)
+        if r.status_code >= 400:
+            return False, f"sandbox http {r.status_code}"
+        data = r.json()
+        run = data.get("run", {})
+        code_out = (run.get("stdout") or "") + (run.get("stderr") or "")
+        ok = (run.get("code") == 0)
+        return ok, code_out.strip()
+    except Exception as e:
+        return False, str(e)
 
-    if "(Подключите OpenAI для реальной генерации)" in article:
-        # Не блокируем публикацию, это ожидаемо на MVP-этапе
+
+def verify_with_search(topic: str, max_checks: int = 2) -> List[str]:
+    if not (Config.GOOGLE_API_KEY and Config.GOOGLE_CSE_ID):
+        return []
+    queries = [topic]
+    errors: List[str] = []
+    for q in queries[:max_checks]:
+        try:
+            resp = requests.get(
+                "https://www.googleapis.com/customsearch/v1",
+                params={"key": Config.GOOGLE_API_KEY, "cx": Config.GOOGLE_CSE_ID, "q": q},
+                timeout=20,
+            )
+            data = resp.json()
+            total = int(data.get("searchInformation", {}).get("totalResults", "0"))
+            if total <= 0:
+                errors.append(f"Не найдено подтверждений по запросу: {q}")
+        except Exception as e:
+            errors.append(f"Ошибка Google CSE: {e}")
+    return errors
+
+
+def fact_check(article_html: str, topic: str) -> Tuple[bool, List[str]]:
+    errors: List[str] = []
+    # 1) Синтаксис Python
+    errors.extend(validate_code_blocks(article_html))
+
+    # 2) Выполним отдельные короткие сниппеты в песочнице
+    try:
+        soup = BeautifulSoup(article_html, "html.parser")
+        executed = 0
+        for pre in soup.find_all("pre"):
+            if executed >= 2:
+                break
+            code = pre.find("code")
+            if not code:
+                continue
+            cls = code.get("class", [])
+            code_text = code.get_text()
+            if any("python" in c for c in cls):
+                ok, out = _run_python_in_sandbox(code_text)
+                if not ok:
+                    errors.append(f"Сниппет не исполнился в песочнице: {html.escape(out)}")
+                executed += 1
+    except Exception:
         pass
 
-    if "Здесь будет текст статьи" in article:
-        return False
+    # 3) Поиск
+    errors.extend(verify_with_search(topic))
 
-    return True
-
-
-def _google_fact_check(queries: List[str], min_hits: int = 1) -> bool:
-    """Проверка фактов через Google Custom Search API (опционально).
-
-    Возвращает True, если для большинства запросов есть результаты.
-    """
-    if not google_search_config.api_key or not google_search_config.cse_id:
-        return True  # без ключей не блокируем публикацию
-
-    ok = 0
-    total = 0
-    for q in queries:
-        if not q.strip():
-            continue
-        total += 1
-        try:
-            url = (
-                "https://www.googleapis.com/customsearch/v1"
-                f"?key={google_search_config.api_key}&cx={google_search_config.cse_id}&q={requests.utils.quote(q)}"
-            )
-            resp = requests.get(url, timeout=10)
-            if resp.ok and len(resp.json().get("items", [])) >= min_hits:
-                ok += 1
-        except Exception:
-            continue
-    if total == 0:
-        return True
-    return ok / total >= 0.6
-
-
-def validate_article_with_facts(article: str, fact_queries: List[str]) -> bool:
-    """Комбинированная проверка: код + веб-факты.
-
-    Возвращает True, если обе проверки проходят.
-    """
-    code_ok = validate_article(article)
-    facts_ok = _google_fact_check(fact_queries)
-    return code_ok and facts_ok
-
-
-def require_valid_article(article: str, max_attempts: int = 2, regenerate_fn=None) -> str:
-    """Гарантирует прохождение фактчекинга. При провале пробует пересборку.
-
-    regenerate_fn: callable(topic:str, thesis:List[str]) -> str — используется внешне (в main) при наличии.
-    На уровне мока делаем только одну попытку.
-    """
-    ok = validate_article(article)
-    if ok:
-        return article
-    attempts = 0
-    while attempts < max_attempts and regenerate_fn is not None:
-        attempts += 1
-        try:
-            new_article = regenerate_fn()
-        except Exception:
-            break
-        if validate_article(new_article):
-            return new_article
-    return article
+    return (len(errors) == 0, errors)

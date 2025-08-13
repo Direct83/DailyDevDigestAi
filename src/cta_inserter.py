@@ -2,67 +2,96 @@
 from __future__ import annotations
 
 import json
-import os
 import random
-from typing import Any, Dict, List
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional
 
-from .config import paths_config
+import requests
 
-
-def _load_ctas() -> List[Dict[str, Any]]:
-    path = os.path.abspath(paths_config.ctas_file)
-    if not os.path.exists(path):
-        # Базовый набор по умолчанию
-        return [
-            {"type": "free", "title": "Бесплатный мастер‑класс по AI", "url": "https://example.com/free-ai"},
-            {"type": "course", "title": "Курс по Python для анализа данных", "url": "https://example.com/course-ds"},
-        ]
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, list):
-                return data
-    except Exception:
-        pass
-    return []
+from .config import Config
 
 
-def _render_cta_block(title: str, url: str) -> str:
-    return f"\n> ▶ {title}\n> Перейти: {url}\n"
+@dataclass
+class CTA:
+    type: str
+    title: str
+    url: str
+    priority: int | None = None
+    fresh: bool = False
 
 
-def insert_cta(article: str) -> str:
-    """Добавляет минимум 1 CTA на бесплатный продукт и 1 ссылку на основной курс.
+class CTAProvider:
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self.path = path  # локальный файл больше не обязателен
+        self._ctas: List[CTA] = []
+        self._load()
 
-    Вставляет блоки после вступления и перед завершением статьи.
-    """
-    ctas = _load_ctas()
-    if not ctas:
-        return article
+    def _load(self) -> None:
+        # 1) ENV CTAS_JSON
+        if Config.CTAS_JSON:
+            try:
+                raw: List[Dict] = json.loads(Config.CTAS_JSON)
+                self._ctas = [CTA(**x) for x in raw]
+                if self._ctas:
+                    self._prioritize()
+                    return
+            except Exception:
+                pass
+        # 2) to.click API (условно: /ctas)
+        if Config.TOCLICK_API_KEY:
+            try:
+                url = (Config.TOCLICK_BASE_URL or "https://to.click/api").rstrip("/") + "/ctas"
+                r = requests.get(url, headers={"Authorization": f"Bearer {Config.TOCLICK_API_KEY}"}, timeout=20)
+                if r.status_code < 400:
+                    raw = r.json()
+                    if isinstance(raw, list):
+                        self._ctas = [CTA(**x) for x in raw]
+                        if self._ctas:
+                            self._prioritize()
+                            return
+            except Exception:
+                pass
+        # 3) Локальный файл (опционально)
+        if self.path and Path(self.path).exists():
+            try:
+                with Path(self.path).open("r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                self._ctas = [CTA(**x) for x in raw]
+                self._prioritize()
+                return
+            except Exception:
+                pass
+        self._ctas = []
 
-    free_ctas = [c for c in ctas if c.get("type") == "free"]
-    course_ctas = [c for c in ctas if c.get("type") in {"course", "program"}]
+    def _prioritize(self) -> None:
+        # Сначала свежие, затем по priority (меньше — выше), затем прочие; сохраняем порядок
+        def sort_key(c: CTA):
+            fresh_rank = 0 if c.fresh else 1
+            prio = c.priority if isinstance(c.priority, int) else 999
+            return (fresh_rank, prio)
 
-    blocks: list[str] = []
-    if free_ctas:
-        c = random.choice(free_ctas)
-        blocks.append(_render_cta_block(c.get("title", "Узнай больше"), c.get("url", "#")))
-    if course_ctas:
-        c = random.choice(course_ctas)
-        blocks.append(_render_cta_block(c.get("title", "Основной курс"), c.get("url", "#")))
+        self._ctas.sort(key=sort_key)
 
-    if not blocks:
-        return article
+    def pick_pair(self) -> List[CTA]:
+        free = [c for c in self._ctas if c.type.lower() in {"free", "freebie"}]
+        course = [c for c in self._ctas if c.type.lower() in {"course", "program"}]
+        result: List[CTA] = []
+        # ограничим выбор верхними 5 по приоритету
+        if free:
+            result.append(random.choice(free[: min(5, len(free))]))
+        if course:
+            result.append(random.choice(course[: min(5, len(course))]))
+        if not result and self._ctas:
+            pool = self._ctas[: min(6, len(self._ctas))]
+            result = random.sample(pool, k=min(2, len(pool)))
+        return result
 
-    # Простая стратегия размещения: после первого абзаца и в конце
-    parts = article.split("\n\n", 1)
-    if len(parts) == 2:
-        intro, rest = parts
-        result = intro + "\n\n" + blocks[0] + "\n\n" + rest
-    else:
-        result = article + "\n\n" + blocks[0]
-
-    if len(blocks) > 1:
-        result = result + "\n\n" + blocks[1]
-
-    return result
+    @staticmethod
+    def render_cta_html(cta: CTA) -> str:
+        return (
+            f'<div class="cta-block" style="border:1px solid #eee;padding:16px;border-radius:8px;margin:24px 0;">'
+            f'<div style="font-weight:700;margin-bottom:8px;">{cta.title}</div>'
+            f'<a href="{cta.url}" target="_blank" rel="noopener" style="color:#0057ff;">Перейти</a>'
+            f"</div>"
+        )

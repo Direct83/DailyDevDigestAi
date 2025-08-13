@@ -1,58 +1,55 @@
 """Хранилище состояния: предотвращение повторов тем в течение N дней."""
 from __future__ import annotations
 
-import json
-import os
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List
 
-from .config import paths_config
+import requests
 
-
-def _ensure_data_dir() -> None:
-    data_dir = os.path.abspath(os.path.join(paths_config.data_dir))
-    os.makedirs(data_dir, exist_ok=True)
+from .config import Config
 
 
-def _load_state() -> dict:
-    _ensure_data_dir()
-    path = os.path.abspath(paths_config.state_file)
-    if not os.path.exists(path):
-        return {"recent_topics": []}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"recent_topics": []}
+def _ghost_headers() -> Dict[str, str]:
+    if not (Config.GHOST_ADMIN_API_URL and Config.GHOST_ADMIN_API_KEY):
+        return {}
+    import jwt
+
+    kid, secret = Config.GHOST_ADMIN_API_KEY.split(":", 1)
+    iat = int(datetime.utcnow().timestamp())
+    header = {"alg": "HS256", "typ": "JWT", "kid": kid}
+    payload = {"iat": iat, "exp": iat + 5 * 60, "aud": "/v5/admin/"}
+    token = jwt.encode(payload, bytes.fromhex(secret), algorithm="HS256", headers=header)
+    return {"Authorization": f"Ghost {token}"}
 
 
-def _save_state(state: dict) -> None:
-    _ensure_data_dir()
-    path = os.path.abspath(paths_config.state_file)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+@dataclass
+class StateStore:
+    history_days: int = 20
 
-
-def get_recent_topics(days: int = 20) -> set[str]:
-    state = _load_state()
-    result: set[str] = set()
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    for item in state.get("recent_topics", []):
+    def is_recent_topic(self, title: str) -> bool:
+        # Если Ghost не настроен — не можем проверить, считаем, что нет дубля
+        if not Config.GHOST_ADMIN_API_URL:
+            return False
+        base = Config.GHOST_ADMIN_API_URL.rstrip("/") + "/ghost/api/admin"
+        since = (datetime.now(timezone.utc) - timedelta(days=self.history_days)).isoformat()
+        headers = _ghost_headers()
         try:
-            ts = datetime.fromisoformat(item.get("ts"))
-            if ts >= cutoff:
-                result.add(item.get("topic", ""))
+            q = f"title:'{title.replace("'", "\\'")}' + published_at:>\"{since}\""
+            r = requests.get(
+                base + f"/posts/?filter={q}&fields=title,published_at&limit=1",
+                headers=headers,
+                timeout=30,
+            )
+            if r.status_code >= 400:
+                return False
+            posts = r.json().get("posts", [])
+            return any(p.get("title", "").strip().lower() == title.strip().lower() for p in posts)
         except Exception:
-            continue
-    return result
+            return False
 
-
-def record_topic(topic: str) -> None:
-    state = _load_state()
-    items = state.get("recent_topics", [])
-    items.append({"topic": topic, "ts": datetime.utcnow().isoformat()})
-    # Обрезаем историю до последних 200 записей, чтобы файл не рос бесконечно
-    items = items[-200:]
-    state["recent_topics"] = items
-    _save_state(state)
+    def add_topic(self, title: str) -> None:
+        # Больше не храним локально; факт публикации есть в Ghost
+        return
 
 

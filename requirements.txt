@@ -1,8 +1,19 @@
-requests>=2.32.0
-PyJWT>=2.8.0
-tzdata>=2024.1
 openai>=1.40.0
-Pillow>=10.4.0
-pytrends>=4.9.2
 python-dotenv>=1.0.1
+requests>=2.32.3
+feedparser>=6.0.11
+beautifulsoup4>=4.12.3
+pytrends>=4.9.2
+APScheduler>=3.10.4
+pytz>=2024.1
+pydantic>=2.8.2
+Jinja2>=3.1.4
+reportlab>=4.2.2
+google-api-python-client>=2.142.0
+google-analytics-data>=0.18.12
+PyJWT>=2.9.0
+typer>=0.12.3
+Pillow>=10.4.0
+tzdata>=2024.1
+python-slugify>=8.0.4
 

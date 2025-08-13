@@ -1,49 +1,70 @@
 """Модуль публикации статьи в Ghost."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+import datetime as dt
+from typing import Dict, List, Optional
 
-from .config import ghost_config
-from .ghost_client import schedule_post
+import jwt
+import pytz
+import requests
 
-
-def _build_tags(article: str) -> list[str]:
-    # Тег темы + системные теги из конфига
-    title = (article.splitlines()[0].lstrip("# ").strip() or "Без названия")
-    topic_tag = title.split("—")[0].split(":")[0].strip()
-    base = list(ghost_config.default_tags)
-    if topic_tag and topic_tag not in base:
-        base.insert(0, topic_tag)
-    return base
+from .config import Config
 
 
-def publish(article: str, cover: bytes, publish_time: datetime) -> None:
-    """Публикует статью с обложкой в Ghost.
+class GhostPublisher:
+    def __init__(self) -> None:
+        if not (Config.GHOST_ADMIN_API_URL and Config.GHOST_ADMIN_API_KEY):
+            raise RuntimeError("Не настроен Ghost Admin API")
+        self.base = Config.GHOST_ADMIN_API_URL.rstrip("/") + "/ghost/api/admin"
+        self._token = self._make_jwt(Config.GHOST_ADMIN_API_KEY)
+        self.headers = {"Authorization": f"Ghost {self._token}"}
 
-    MVP: dry-run — печатает параметры. Реальная интеграция — через Ghost Admin API.
-    """
-    tz_aware = publish_time
-    if publish_time.tzinfo is None:
-        # Считаем, что вход — время в Europe/Moscow, конвертируем в UTC
-        msk = ZoneInfo("Europe/Moscow")
-        tz_aware = publish_time.replace(tzinfo=msk).astimezone(timezone.utc)
+    def _make_jwt(self, admin_key: str) -> str:
+        kid, secret = admin_key.split(":", 1)
+        iat = int(dt.datetime.utcnow().timestamp())
+        header = {"alg": "HS256", "typ": "JWT", "kid": kid}
+        payload = {"iat": iat, "exp": iat + 5 * 60, "aud": "/v5/admin/"}
+        token = jwt.encode(payload, bytes.fromhex(secret), algorithm="HS256", headers=header)
+        return token
 
-    # Если ключи заданы — пробуем реальный вызов
-    if ghost_config.admin_api_url and ghost_config.admin_api_key:
-        url = schedule_post(
-            title=article.splitlines()[0].lstrip("# ").strip() or "Без названия",
-            html=article,
-            tags=_build_tags(article),
-            publish_time=tz_aware,
-        )
-        if url:
-            print("Опубликовано/запланировано в Ghost:", url)
-            return
+    def upload_image_bytes(self, image_bytes: bytes, filename: str = "cover.png") -> Optional[str]:
+        try:
+            files = {"file": (filename, image_bytes, "image/png")}
+            r = requests.post(self.base + "/images/upload/", headers=self.headers, files=files, timeout=60)
+            r.raise_for_status()
+            data = r.json()
+            return data.get("images", [{}])[0].get("url")
+        except Exception:
+            return None
 
-    print("[DRY-RUN] Публикация в Ghost:")
-    print("- URL:", ghost_config.admin_api_url)
-    print("- Теги:", ", ".join(ghost_config.default_tags))
-    print("- Время публикации:", tz_aware.isoformat())
-    print("- Длина статьи:", len(article))
-    print("- Обложка (байт):", len(cover))
+    def publish(self, title: str, html: str, tags: List[str], feature_image_bytes: Optional[bytes], schedule_msk_11: bool = True) -> Dict:
+        feature_image = None
+        if feature_image_bytes:
+            feature_image = self.upload_image_bytes(feature_image_bytes)
+
+        status = "published"
+        published_at = None
+        if schedule_msk_11:
+            tz = pytz.timezone(Config.APP_TIMEZONE or "Europe/Moscow")
+            now = dt.datetime.now(tz)
+            scheduled = now.replace(hour=11, minute=0, second=0, microsecond=0)
+            if now >= scheduled:
+                scheduled = scheduled + dt.timedelta(days=1)
+            published_at = scheduled.astimezone(pytz.utc).isoformat()
+            status = "scheduled"
+
+        payload = {
+            "posts": [
+                {
+                    "title": title,
+                    "html": html,
+                    "status": status,
+                    **({"published_at": published_at} if published_at else {}),
+                    **({"feature_image": feature_image} if feature_image else {}),
+                    "tags": list({*(tags or []), "AI Generated"}),
+                }
+            ]
+        }
+        r = requests.post(self.base + "/posts/?source=html", headers=self.headers, json=payload, timeout=60)
+        r.raise_for_status()
+        return r.json()

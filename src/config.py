@@ -5,8 +5,65 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from dataclasses import dataclass
 from typing import Optional
+
+# Загружаем .env при наличии
+load_dotenv()
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def get_env(name: str, default: str | None = None) -> str | None:
+    value = os.getenv(name)
+    return value if value not in (None, "", "None") else default
+
+
+class Config:
+    # OpenAI
+    OPENAI_API_KEY: str | None = get_env("OPENAI_API_KEY")
+    OPENAI_MODEL: str = get_env("OPENAI_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
+    OPENAI_IMAGE_MODEL: str = get_env("OPENAI_IMAGE_MODEL", "gpt-image-1") or "gpt-image-1"
+
+    # Ghost Admin
+    GHOST_ADMIN_API_URL: str | None = get_env("GHOST_ADMIN_API_URL")
+    GHOST_ADMIN_API_KEY: str | None = get_env("GHOST_ADMIN_API_KEY")  # format: <admin_id>:<secret_hex>
+
+    # Content API (опционально)
+    GHOST_CONTENT_API_URL: str | None = get_env("GHOST_CONTENT_API_URL")
+    GHOST_CONTENT_API_KEY: str | None = get_env("GHOST_CONTENT_API_KEY")
+
+    # Google CSE (фактчекинг)
+    GOOGLE_API_KEY: str | None = get_env("GOOGLE_API_KEY")
+    GOOGLE_CSE_ID: str | None = get_env("GOOGLE_CSE_ID")
+
+    # GA4 (опционально)
+    GA4_PROPERTY_ID: str | None = get_env("GA4_PROPERTY_ID")
+    GA4_JSON_KEY_PATH: str | None = get_env("GA4_JSON_KEY_PATH")
+
+    # to.click
+    TOCLICK_API_KEY: str | None = get_env("TOCLICK_API_KEY")
+    TOCLICK_BASE_URL: str = get_env("TOCLICK_BASE_URL", "https://to.click/api") or "https://to.click/api"
+
+    # CTA из ENV (JSON)
+    CTAS_JSON: str | None = get_env("CTAS_JSON")
+
+    # SMTP
+    SMTP_HOST: str | None = get_env("SMTP_HOST")
+    SMTP_PORT: int = int(get_env("SMTP_PORT", "587") or "587")
+    SMTP_USER: str | None = get_env("SMTP_USER")
+    SMTP_PASSWORD: str | None = get_env("SMTP_PASSWORD")
+    REPORT_EMAIL_TO: str | None = get_env("REPORT_EMAIL_TO")
+
+    # Прочее
+    APP_TIMEZONE: str = get_env("APP_TIMEZONE", "Europe/Moscow") or "Europe/Moscow"
+
+    @classmethod
+    def ensure_dirs(cls) -> None:
+        # Больше не требуется локальная директория data
+        return
 
 
 @dataclass(frozen=True)
