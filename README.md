@@ -79,12 +79,11 @@ cp env.example .env
 
 - **Язык и CLI**: Python 3.x, Typer
 - **Сетевые вызовы и парсинг**: requests, BeautifulSoup4, feedparser
-- **Источники тем**: Hacker News (REST), Reddit (RSS/JSON), Google Trends (pytrends), GitHub Trending (HTML‑парсинг)
+- **Источники тем**: Hacker News (REST), Reddit (RSS/JSON), Google Trends (pytrends), GitHub Trending (HTML‑парсинг), Telegram RSS (опц.), Yandex Suggest (опц.)
 - **Генерация контента и обложек**: OpenAI Python SDK (Chat Completions, Images), Pillow
-- **Фактчекинг**: AST‑проверка Python, Piston API (песочница сниппетов), Google Custom Search API
+- **Фактчекинг**: AST‑проверка Python, Piston API (песочница сниппетов) / Replit API (опц.), Google Custom Search API
 - **Публикация**: Ghost Admin API, PyJWT (JWT для Ghost)
 - **Аналитика**: Google Analytics 4 (google-analytics-data), Ghost Admin API (метаданные постов), to.click (CTR)
 - **Отчёты**: reportlab (PDF), SMTP (отправка email)
-- **Конфигурация и время**: python-dotenv, pytz/tzdata
-- **Утилиты**: python-slugify
+- **Конфигурация и время**: python-dotenv, pytz
 - **Планирование**: планировщик ОС (Windows Task Scheduler/cron)
