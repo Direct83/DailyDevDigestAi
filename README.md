@@ -2,82 +2,41 @@
 
 AI-агент, автоматизирующий ежедневную публикацию статей (тема → генерация → фактчекинг → обложка → публикация → аналитика → CTA).
 
-## Структура
+## Быстрый старт
 
-- `src/main.py` — CLI и оркестрация пайплайна
-- `src/topics_selector.py` — выбор темы (HN + Reddit + Google Trends + GitHub Trending; антидубль через Ghost за 20 дней)
-- `src/article_generator.py` — генерация статьи (OpenAI при ключе; контроль длины 4000–8000 символов)
-- `src/fact_checker.py` — фактчекинг (синтаксис Python, песочница Piston API для коротких сниппетов, Google CSE)
-- `src/cover_generator.py` — обложка 1200×630 (OpenAI Images при ключе), рендер в памяти
-- `src/publisher.py` — публикация в Ghost (теги + “AI Generated”, отложено на 11:00 МСК)
-- `src/analytics_reporter.py` — еженедельный PDF-отчёт (Ghost + опц. GA4 и CTR из to.click)
-- `src/cta_inserter.py` — вставка CTA (источник: `CTAS_JSON` или to.click API; приоритизация свежих)
-- `src/config.py` — конфиг (env)
-- `src/state.py` — антидубль тем (через Ghost)
-
-## Запуск
-
+1) Установка зависимостей (Git Bash на Windows)
 ```bash
-python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python -m src.main run-once
+python -m venv .venv
+./.venv/Scripts/python.exe -m pip install -r requirements.txt
 ```
 
-Чтобы включить реальные сервисы, задайте переменные окружения.
-Скопируйте `env.example` в `.env` и заполните значения — файл подхватится автоматически, либо экспортируйте переменные вручную.
-
+2) Настройка окружения
 ```bash
-# OpenAI
-set OPENAI_API_KEY=sk-...
-set OPENAI_MODEL=gpt-4o-mini
-set OPENAI_IMAGE_MODEL=gpt-image-1
-
-# Ghost Admin API
-set GHOST_ADMIN_API_URL=https://your-blog.com
-set GHOST_ADMIN_API_KEY=<admin_id>:<secret_hex>
-
-# Google Custom Search (опционально)
-set GOOGLE_API_KEY=...
-set GOOGLE_CSE_ID=...
-
-# GA4 (опционально)
-set GA4_PROPERTY_ID=...
-set GA4_JSON_KEY_PATH=path\to\service-account.json
-
-# to.click (опционально)
-set TOCLICK_API_KEY=...
-set TOCLICK_BASE_URL=https://to.click/api
-
-# CTA (JSON строка)
-set CTAS_JSON=[{"type":"free","title":"Бесплатный мастер-класс","url":"https://example.com/free","priority":1,"fresh":true},{"type":"course","title":"Курс Python","url":"https://example.com/course","priority":2}]
-
-# SMTP для отчётов
-set SMTP_HOST=smtp.example.com
-set SMTP_PORT=587
-set SMTP_USER=...
-set SMTP_PASSWORD=...
-set REPORT_EMAIL_TO=director@example.com
-
-# Прочее
-set APP_TIMEZONE=Europe/Moscow
+cp env.example .env
 ```
+Минимум для продакшена заполните в `.env`:
+- OPENAI_API_KEY — генерация текста/обложек (можно без него, будет fallback)
+- GHOST_ADMIN_API_URL и GHOST_ADMIN_API_KEY — публикация в Ghost
+- GOOGLE_API_KEY и GOOGLE_CSE_ID — фактчекинг (поиск)
+- SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, REPORT_EMAIL_TO — еженедельный отчёт
+Опционально: GA4_PROPERTY_ID, GA4_JSON_KEY_PATH, TOCLICK_API_KEY, CTAS_JSON.
 
-После задания ключей — `python -m src.main run-once` выполнит реальные вызовы.
-
-### Планировщик (Windows Task Scheduler)
-
-Запланируйте ежедневный запуск пайплайна и еженедельный отчёт:
-
-```bat
-schtasks /Create /TN "DDD_Daily" /TR "%CD%\.venv\Scripts\python.exe -m src.main daily" /SC DAILY /ST 07:00
-schtasks /Create /TN "DDD_Weekly" /TR "%CD%\.venv\Scripts\python.exe -m src.main weekly" /SC WEEKLY /D SUN /ST 19:00
+3) Первый запуск
+```bash
+./.venv/Scripts/python.exe -m src.main run-once
 ```
+Если ключей нет, пройдёт упрощённый сценарий (без реальной публикации и части проверок).
 
-Убедитесь, что локальная TZ — Europe/Moscow, либо скорректируйте время под вашу TZ.
+## Запуск и расписание
 
-## Примечания
-- Фактчекинг запускает только короткие безопасные Python-сниппеты (через Piston API); потенциально опасные блокируются.
-- При отсутствии ключей сервисов соответствующие части переходят в упрощённый режим.
+- Разовая публикация (для проверки):
+  - `./.venv/Scripts/python.exe -m src.main run-once`
+- Ежедневный цикл:
+  - В 07:00 МСК планировщик запускает `run-once`; публикация автоматически ставится на 11:00 МСК
+- Еженедельный отчёт:
+  - В воскресенье в 19:00 МСК запускается `weekly`: `./.venv/Scripts/python.exe -m src.main weekly`
+
+Используйте любой планировщик (Task Scheduler, cron, CI). Часовая зона: `Europe/Moscow`.
 
 ## Компонентная архитектура
 
