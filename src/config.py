@@ -29,7 +29,7 @@ class Config:
 
     # Ghost Admin
     GHOST_ADMIN_API_URL: str | None = get_env("GHOST_ADMIN_API_URL")
-    GHOST_ADMIN_API_KEY: str | None = get_env("GHOST_ADMIN_API_KEY")  # format: <admin_id>:<secret_hex>
+    GHOST_ADMIN_API_KEY: str | None = get_env("GHOST_ADMIN_API_KEY")  # format: <id>:<secret_hex>
 
     # Content API (опционально)
     GHOST_CONTENT_API_URL: str | None = get_env("GHOST_CONTENT_API_URL")
@@ -49,6 +49,17 @@ class Config:
 
     # CTA из ENV (JSON)
     CTAS_JSON: str | None = get_env("CTAS_JSON")
+
+    # Telegram RSS (через любые публичные RSS-прокси на каналы)
+    TELEGRAM_RSS_FEEDS: str | None = get_env("TELEGRAM_RSS_FEEDS")  # comma-separated URLs
+
+    # Яндекс подсказки (approx Wordstat) — список seed-запросов через запятую
+    YANDEX_SUGGEST_SEEDS: str | None = get_env("YANDEX_SUGGEST_SEEDS")  # e.g. "как, python, нейросети"
+
+    # Песочница исполнения кода: replit | piston (по умолчанию piston)
+    SANDBOX_PROVIDER: str = (get_env("SANDBOX_PROVIDER", "piston") or "piston").lower()
+    REPLIT_EVAL_URL: str | None = get_env("REPLIT_EVAL_URL")  # например, https://eval.api.replit.com/eval
+    REPLIT_EVAL_TOKEN: str | None = get_env("REPLIT_EVAL_TOKEN")  # Bearer token
 
     # SMTP
     SMTP_HOST: str | None = get_env("SMTP_HOST")

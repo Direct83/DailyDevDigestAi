@@ -33,11 +33,7 @@ def validate_code_blocks(article_html: str) -> List[str]:
     return errors
 
 
-def _run_python_in_sandbox(code: str) -> Tuple[bool, str]:
-    """Запуск короткого Python-кода в публичной песочнице Piston API.
-
-    Ограничим длину кода и не отправляем, если код потенциально опасен (import os, subprocess, requests, etc.).
-    """
+def _run_python_piston(code: str) -> Tuple[bool, str]:
     if len(code) > 1000:
         return True, "skipped"
     banned = ["import os", "import sys", "subprocess", "open(", "requests."]
@@ -55,11 +51,43 @@ def _run_python_in_sandbox(code: str) -> Tuple[bool, str]:
             return False, f"sandbox http {r.status_code}"
         data = r.json()
         run = data.get("run", {})
-        code_out = (run.get("stdout") or "") + (run.get("stderr") or "")
+        out = (run.get("stdout") or "") + (run.get("stderr") or "")
         ok = (run.get("code") == 0)
-        return ok, code_out.strip()
+        return ok, out.strip()
     except Exception as e:
         return False, str(e)
+
+
+def _run_python_replit(code: str) -> Tuple[bool, str]:
+    if not (Config.REPLIT_EVAL_URL and Config.REPLIT_EVAL_TOKEN):
+        return False, "replit not configured"
+    if len(code) > 1000:
+        return True, "skipped"
+    banned = ["import os", "import sys", "subprocess", "open(", "requests."]
+    if any(b in code for b in banned):
+        return True, "skipped"
+    try:
+        headers = {"Authorization": f"Bearer {Config.REPLIT_EVAL_TOKEN}", "Content-Type": "application/json"}
+        payload = {"language": "python3", "files": [{"name": "main.py", "content": code}]}
+        r = requests.post(Config.REPLIT_EVAL_URL, json=payload, headers=headers, timeout=20)
+        if r.status_code >= 400:
+            return False, f"replit http {r.status_code}"
+        data = r.json()
+        # ожидаем поля stdout/stderr/exitCode в ответе; зависит от конкретного шлюза
+        stdout = data.get("stdout") or ""
+        stderr = data.get("stderr") or ""
+        exit_code = int(data.get("exitCode") or 0)
+        ok = exit_code == 0
+        return ok, (stdout + stderr).strip()
+    except Exception as e:
+        return False, str(e)
+
+
+def _run_python_in_sandbox(code: str) -> Tuple[bool, str]:
+    provider = Config.SANDBOX_PROVIDER
+    if provider == "replit":
+        return _run_python_replit(code)
+    return _run_python_piston(code)
 
 
 def verify_with_search(topic: str, max_checks: int = 2) -> List[str]:

@@ -11,6 +11,7 @@ import feedparser
 import requests
 
 from .state import StateStore
+from .config import Config
 
 
 @dataclass
@@ -132,6 +133,54 @@ def fetch_github_trending() -> List[TopicCandidate]:
         return []
 
 
+def fetch_telegram_rss() -> List[TopicCandidate]:
+    feeds = (Config.TELEGRAM_RSS_FEEDS or "").split(",")
+    feeds = [f.strip() for f in feeds if f.strip()]
+    if not feeds:
+        return []
+    result: List[TopicCandidate] = []
+    for url in feeds:
+        try:
+            feed = feedparser.parse(url)
+            for e in feed.entries[:20]:
+                title = e.get("title") or e.get("summary") or ""
+                if not title:
+                    continue
+                dt = datetime.now(timezone.utc)
+                if any(k.lower() in title.lower() for k in KEYWORDS):
+                    result.append(TopicCandidate(title=title, source="TG", score=1.2, published_at=dt))
+        except Exception:
+            continue
+    return result
+
+
+def fetch_yandex_suggest() -> List[TopicCandidate]:
+    seeds = (Config.YANDEX_SUGGEST_SEEDS or "").split(",")
+    seeds = [s.strip() for s in seeds if s.strip()]
+    if not seeds:
+        return []
+    result: List[TopicCandidate] = []
+    now = datetime.now(timezone.utc)
+    for seed in seeds[:10]:
+        try:
+            # Яндекс подсказки (v2) — неофициальная точка, может меняться; используем как приблизитель Wordstat
+            r = requests.get(
+                "https://suggest.yandex.ru/suggest-ff.cgi",
+                params={"part": seed, "uil": "ru", "v": "2", "ip": "0.0.0.0"},
+                timeout=10,
+            )
+            data = r.json()
+            # Ожидаем формат: ["seed", ["подсказка1", "подсказка2", ...]]
+            items = data[1] if isinstance(data, list) and len(data) > 1 else []
+            for q in items[:10]:
+                title = str(q)
+                if any(k.lower() in title.lower() for k in KEYWORDS) or any(w in title.lower() for w in ["как ", "how to", "пример", "обучить", "настроить"]):
+                    result.append(TopicCandidate(title=title, source="YandexSuggest", score=1.0, published_at=now))
+        except Exception:
+            continue
+    return result
+
+
 def select_topic(state: Optional[StateStore] = None) -> Dict[str, object]:
     state = state or StateStore()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
@@ -141,6 +190,8 @@ def select_topic(state: Optional[StateStore] = None) -> Dict[str, object]:
     candidates.extend(fetch_reddit())
     candidates.extend(fetch_google_trends())
     candidates.extend(fetch_github_trending())
+    candidates.extend(fetch_telegram_rss())
+    candidates.extend(fetch_yandex_suggest())
 
     # 48 часов окно
     candidates = [c for c in candidates if c.published_at >= cutoff]
