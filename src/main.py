@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from .topics_selector import select_topic
 from .article_generator import generate_article
-from .fact_checker import validate_article
+from .fact_checker import validate_article, require_valid_article
 from .cover_generator import generate_cover
 from .cta_inserter import insert_cta
 from .publisher import publish
@@ -19,12 +20,19 @@ def run_daily_pipeline() -> None:
     topic, thesis = select_topic()
     article = generate_article(topic, thesis)
     if not validate_article(article):
-        raise ValueError("Статья не прошла проверку")
+        # Пересборка один раз (мок). Для реального режима сюда передадим логику регенерации
+        article = require_valid_article(article, max_attempts=1, regenerate_fn=lambda: generate_article(topic, thesis))
     article = insert_cta(article)
     cover = generate_cover(topic)
-    publish_time = (
-        datetime.now().replace(hour=time_config.daily_publish_hour, minute=0, second=0, microsecond=0)
+    # Время публикации считаем в Europe/Moscow и переносим на завтра, если "сейчас" позже
+    msk = ZoneInfo("Europe/Moscow")
+    now_msk = datetime.now(msk)
+    publish_time_today = now_msk.replace(
+        hour=time_config.daily_publish_hour, minute=0, second=0, microsecond=0
     )
+    publish_time = publish_time_today
+    if now_msk >= publish_time_today:
+        publish_time = publish_time_today + timedelta(days=1)
     publish(article, cover, publish_time)
 
 

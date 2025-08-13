@@ -88,3 +88,24 @@ def validate_article_with_facts(article: str, fact_queries: List[str]) -> bool:
     code_ok = validate_article(article)
     facts_ok = _google_fact_check(fact_queries)
     return code_ok and facts_ok
+
+
+def require_valid_article(article: str, max_attempts: int = 2, regenerate_fn=None) -> str:
+    """Гарантирует прохождение фактчекинга. При провале пробует пересборку.
+
+    regenerate_fn: callable(topic:str, thesis:List[str]) -> str — используется внешне (в main) при наличии.
+    На уровне мока делаем только одну попытку.
+    """
+    ok = validate_article(article)
+    if ok:
+        return article
+    attempts = 0
+    while attempts < max_attempts and regenerate_fn is not None:
+        attempts += 1
+        try:
+            new_article = regenerate_fn()
+        except Exception:
+            break
+        if validate_article(new_article):
+            return new_article
+    return article

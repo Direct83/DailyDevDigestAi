@@ -12,6 +12,11 @@ from xml.etree import ElementTree
 
 from .config import sources_config
 
+try:
+    from pytrends.request import TrendReq  # type: ignore
+except Exception:
+    TrendReq = None  # type: ignore
+
 
 def _hn_recent_stories(query: str, hours: int = 48, hits_per_page: int = 20) -> List[str]:
     now = int(time.time())
@@ -92,6 +97,37 @@ def fetch_candidate_topics() -> List[str]:
         if t not in seen:
             seen.add(t)
             unique.append(t)
+
+    # Google Trends (опционально)
+    if TrendReq is not None:
+        try:
+            pytrends = TrendReq(hl="ru-RU", tz=180)
+            kws = ["как", "how to", "обучить", "настроить", "установить", "пример"]
+            pytrends.build_payload(kws, timeframe="now 7-d", geo=sources_config.google_trends_geo)
+            related = pytrends.related_queries()
+            for kw in kws:
+                data = related.get(kw, {})
+                for key in ("top", "rising"):
+                    df = data.get(key)
+                    if df is not None:
+                        for row in df.head(10).to_dict("records"):
+                            q = (row.get("query") or "").strip()
+                            if q and q not in seen:
+                                seen.add(q)
+                                unique.append(q)
+        except Exception:
+            pass
+
+    # Приоритизируем «обучающие» запросы в выдаче
+    def _score(title: str) -> int:
+        t = title.lower()
+        score = 0
+        for token in ["how to", "как ", "как-", "обучить", "настроить", "установить", "пример", "tutorial", "guide"]:
+            if token in t:
+                score += 1
+        return score
+
+    unique.sort(key=_score, reverse=True)
 
     return unique[:100]
 

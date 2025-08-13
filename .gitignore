@@ -5,6 +5,10 @@ __pycache__/
 
 # Data/runtime
 data/
+!data/
+!data/ctas.json
+!data/state.json
+.env
 
 # OS/IDE
 .DS_Store

@@ -68,6 +68,7 @@ class SourcesConfig:
         if s.strip()
     )
     github_language_filter: str = os.getenv("GITHUB_LANG", "Python,TypeScript,JavaScript")
+    google_trends_geo: str = os.getenv("GOOGLE_TRENDS_GEO", "RU")
 
 
 @dataclass(frozen=True)
