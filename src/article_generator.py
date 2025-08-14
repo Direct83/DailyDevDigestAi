@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 
 from .config import Config
-from .cta_inserter import CTAProvider
 
 
 def _openai_client():
+    """Возвращает OpenAI client или None, если ключ/SDK недоступны."""
     if not Config.OPENAI_API_KEY:
         return None
     try:
@@ -52,6 +52,10 @@ def generate_russian_title(topic: str) -> str:
 
 
 def _adjust_length_with_model(client, html: str) -> str:
+    """Подгоняет длину HTML статьи к диапазону 4–8 тис. символов с помощью LLM.
+
+    Если вызов не удался — возвращает исходный HTML без изменений.
+    """
     length = len(html)
     if 4000 <= length <= 8000:
         return html
@@ -79,9 +83,12 @@ def _adjust_length_with_model(client, html: str) -> str:
 
 
 def generate_article(topic: str, outline: list[str], tags: list[str]) -> tuple[str, list[str]]:
+    """Генерирует HTML статьи и итоговые теги по теме и тезисам.
+
+    Возвращает кортеж: (html, tags). При недоступности LLM использует простой
+    локальный шаблон через `_fallback_html`.
+    """
     client = _openai_client()
-    ctas = CTAProvider()
-    pair = ctas.pick_pair()
 
     if client:
         system = (
@@ -111,20 +118,11 @@ def generate_article(topic: str, outline: list[str], tags: list[str]) -> tuple[s
     else:
         html = _fallback_html(topic, outline)
 
-    # Вставка CTA
-    if pair:
-        blocks = [CTAProvider.render_cta_html(p) for p in pair]
-        for block in blocks:
-            if "<!--CTA_SLOT-->" in html:
-                html = html.replace("<!--CTA_SLOT-->", block, 1)
-        # если слотов нет — добавим в конец
-        if "<!--CTA_SLOT-->" not in html:
-            html += "\n" + "\n".join(blocks)
-
     return html, tags
 
 
 def _fallback_html(topic: str, outline: list[str]) -> str:
+    """Простейший HTML-шаблон статьи на случай недоступности LLM."""
     items = "".join(f"<li>{p}</li>" for p in outline)
     return (
         f"<h2>{topic}</h2>"

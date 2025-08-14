@@ -7,26 +7,27 @@ import datetime as dt
 import logging
 from email.utils import parsedate_to_datetime
 
-import jwt
 import pytz
 import requests
 
 from .config import Config
+from .ghost_utils import ghost_admin_base, ghost_auth_headers, publish_html_post, upload_image_bytes
 
 
 class GhostPublisher:
     def __init__(self) -> None:
+        """Публикатор постов в Ghost Admin API v5.
+
+        Требует `GHOST_ADMIN_API_URL` и `GHOST_ADMIN_API_KEY` в окружении.
+        """
         if not (Config.GHOST_ADMIN_API_URL and Config.GHOST_ADMIN_API_KEY):
             raise RuntimeError("Не настроен Ghost Admin API")
-        self.base = Config.GHOST_ADMIN_API_URL.rstrip("/") + "/ghost/api/admin"
-        # Диагностический минимум
-        self._kid = Config.GHOST_ADMIN_API_KEY.split(":", 1)[0]
-        self._aud = "/v5/admin/"
+        self.base = ghost_admin_base()
 
     def _get_server_epoch(self) -> int:
-        """Пытаемся получить серверное время из заголовка Date у /site/.
+        """Пытается получить серверное время из заголовка Date у /site/.
 
-        Если не получилось — возвращаем локальное UTC now.
+        Если не получилось — возвращает локальное UTC now.
         """
         try:
             url = self.base + "/site/"
@@ -41,20 +42,11 @@ class GhostPublisher:
             pass
         return int(dt.datetime.utcnow().timestamp())
 
-    def _make_jwt(self, admin_key: str, aud: str = "/v5/admin/") -> str:
-        kid, secret = admin_key.split(":", 1)
-        server_now = self._get_server_epoch()
-        # Устанавливаем iat по времени сервера Ghost, exp = +300с
-        iat = max(0, server_now)
-        header = {"alg": "HS256", "typ": "JWT", "kid": kid}
-        exp = server_now + 300
-        payload = {"iat": iat, "exp": exp, "aud": aud}
-        return jwt.encode(payload, bytes.fromhex(secret), algorithm="HS256", headers=header)
-
     def _auth_headers(self) -> dict[str, str]:
-        return {"Authorization": f"Ghost {self._make_jwt(Config.GHOST_ADMIN_API_KEY, aud=self._aud)}"}
+        return ghost_auth_headers()
 
     def upload_image_bytes(self, image_bytes: bytes, filename: str = "cover.png") -> str | None:
+        """Загружает байты изображения и возвращает URL, либо None при ошибке."""
         try:
             files = {"file": (filename, image_bytes, "image/png")}
             r = requests.post(self.base + "/images/upload/", headers=self._auth_headers(), files=files, timeout=60)
@@ -78,6 +70,12 @@ class GhostPublisher:
         feature_image_bytes: bytes | None,
         schedule_msk_11: bool = True,
     ) -> dict:
+        """Публикует/планирует HTML‑пост в Ghost.
+
+        - Ограничивает длину заголовка до 255 символов
+        - Загружает feature image при наличии
+        - При `schedule_msk_11=True` планирует публикацию на 11:00 МСК ближайшего дня
+        """
         # Нормализация заголовка под ограничения Ghost (<=255 символов)
         safe_title = (title or "").strip()
         if len(safe_title) > 255:
@@ -85,7 +83,7 @@ class GhostPublisher:
 
         feature_image = None
         if feature_image_bytes:
-            feature_image = self.upload_image_bytes(feature_image_bytes)
+            feature_image = upload_image_bytes(feature_image_bytes)
 
         status = "published"
         published_at = None
@@ -98,27 +96,13 @@ class GhostPublisher:
             published_at = scheduled.astimezone(pytz.utc).isoformat()
             status = "scheduled"
 
-        # Нормализуем теги в список объектов с именем (устойчиво для Admin API v5)
+        # Нормализуем теги и публикуем через общий util
         uniq_tags: list[str] = list({*(tags or []), "AI Generated"})
-        tag_objects: list[dict[str, str]] = [{"name": t} for t in uniq_tags if t]
-
-        payload = {
-            "posts": [
-                {
-                    "title": safe_title,
-                    "html": html,
-                    "status": status,
-                    **({"published_at": published_at} if published_at else {}),
-                    **({"feature_image": feature_image} if feature_image else {}),
-                    "tags": tag_objects,
-                },
-            ],
-        }
-        r = requests.post(self.base + "/posts/?source=html", headers=self._auth_headers(), json=payload, timeout=60)
-        if r.status_code >= 400:
-            # Постараемся отдать полезную диагностику (валидация 422 и т.п.)
-            try:
-                logging.warning("Ghost publish error: status=%s body=%s", r.status_code, str(r.text)[:500])
-            finally:
-                r.raise_for_status()
-        return r.json()
+        return publish_html_post(
+            title=safe_title,
+            html=html,
+            tags=uniq_tags,
+            feature_image=feature_image,
+            status=status,
+            published_at=published_at,
+        )

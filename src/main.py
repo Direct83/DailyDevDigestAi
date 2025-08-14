@@ -6,14 +6,9 @@ import logging
 
 import typer
 
+from .agent.graph import AgentContext, run_publication_once
 from .analytics_reporter import send_weekly_report
-from .article_generator import generate_article, generate_russian_title
 from .config import Config
-from .cover_generator import generate_cover_bytes
-from .fact_checker import fact_check
-from .publisher import GhostPublisher
-from .state import StateStore
-from .topics_selector import select_topic
 
 app = typer.Typer(help="DailyDevDigestAi — публикация статей и отчёты")
 
@@ -27,66 +22,43 @@ def setup_logging() -> None:
 
 @app.command()
 def run_once() -> None:
+    """Совместимая команда: один прогон публикации через граф‑агента."""
     setup_logging()
     Config.ensure_dirs()
-    state = StateStore()
-
-    sel = select_topic(state)
-    raw_title: str = str(sel["title"])  # type: ignore
-    # Русифицированный, более короткий заголовок
-    title: str = generate_russian_title(raw_title)
-    tags = list(sel.get("tags", []))  # type: ignore
-    outline = list(sel.get("outline", []))  # type: ignore
-
-    logging.info("Тема: %s", title)
-
-    html, tags = generate_article(title, outline, tags)
-
-    # Фактчекинг: до двух попыток
-    ok, errs = fact_check(html, title)
-    if not ok:
-        logging.warning("Фактчекинг не пройден, пересборка: %s", "; ".join(errs))
-        html, tags = generate_article(title, outline, tags)
-        ok2, errs2 = fact_check(html, title)
-        if not ok2:
-            logging.error("Фактчекинг повторно не пройден: %s", "; ".join(errs2))
-            # По ТЗ: при неподтверждении факта после пересборки публикацию останавливаем
-            return
-
-    # Обложка (в памяти)
-    cover_bytes = generate_cover_bytes(title)
-
-    # Публикация (если настроен Ghost)
+    ctx = run_publication_once(AgentContext())
     try:
-        publisher = GhostPublisher()
-        res = publisher.publish(
-            title=title,
-            html=html,
-            tags=tags,
-            feature_image_bytes=cover_bytes,
-            schedule_msk_11=True,
+        posts = (ctx.publish_result or {}).get("posts", [])
+        p = posts[0] if posts else {}
+        logging.info(
+            "Опубликовано/запланировано: id=%s title=%s status=%s feature_image=%s",
+            p.get("id"),
+            p.get("title"),
+            p.get("status"),
+            p.get("feature_image"),
         )
-        # Краткий итог вместо полного JSON
-        try:
-            posts = (res or {}).get("posts", [])
-            p = posts[0] if posts else {}
-            logging.info(
-                "Опубликовано/запланировано: id=%s title=%s status=%s feature_image=%s",
-                p.get("id"),
-                p.get("title"),
-                p.get("status"),
-                p.get("feature_image"),
-            )
-        except Exception:
-            logging.info("Опубликовано/запланировано")
-        state.add_topic(title)
-    except Exception as e:
-        logging.warning("Публикация пропущена: %s", e)
+    except Exception:
+        pass
 
 
 @app.command()
 def daily() -> None:
-    run_once()
+    # совместимость: daily выполняет один прогон через граф‑агента
+    setup_logging()
+    Config.ensure_dirs()
+    ctx = run_publication_once(AgentContext())
+    # компактный вывод результата, если публиковалось
+    try:
+        posts = (ctx.publish_result or {}).get("posts", [])
+        p = posts[0] if posts else {}
+        logging.info(
+            "Опубликовано/запланировано: id=%s title=%s status=%s feature_image=%s",
+            p.get("id"),
+            p.get("title"),
+            p.get("status"),
+            p.get("feature_image"),
+        )
+    except Exception:
+        pass
 
 
 @app.command()

@@ -12,6 +12,7 @@ from .config import Config
 
 
 def _openai_client():
+    """Возвращает OpenAI client для генерации изображений или None."""
     if not Config.OPENAI_API_KEY:
         return None
     try:
@@ -23,6 +24,7 @@ def _openai_client():
 
 
 def _center_crop_to(img: Image.Image, target: tuple[int, int]) -> Image.Image:
+    """Масштабирует по краткой стороне и центрирует обрезку под `target`."""
     tw, th = target
     w, h = img.size
     # Масштаб по краткой стороне
@@ -36,6 +38,7 @@ def _center_crop_to(img: Image.Image, target: tuple[int, int]) -> Image.Image:
 
 
 def generate_cover_bytes(title: str) -> bytes:
+    """Генерирует PNG обложку: DALL‑E (если доступно) + наложение заголовка."""
     img = _generate_base_image()
 
     # Если есть ключ OpenAI — генерируем через DALL‑E (или выбранную модель), затем приводим к 1200x630
@@ -77,6 +80,7 @@ def generate_cover_bytes(title: str) -> bytes:
 
 
 def _generate_base_image() -> Image.Image:
+    """Рисует базовый градиентный фон (fallback), 1200x630."""
     # Светлый вертикальный градиент (fallback)
     width, height = 1200, 630
     img = Image.new("RGB", (width, height))
@@ -93,6 +97,7 @@ def _generate_base_image() -> Image.Image:
 
 
 def _overlay_text(img: Image.Image, text: str) -> Image.Image:
+    """Накладывает заголовок с переносами строк по ширине блока."""
     draw = ImageDraw.Draw(img)
     try:
         font = ImageFont.truetype("arial.ttf", 44)

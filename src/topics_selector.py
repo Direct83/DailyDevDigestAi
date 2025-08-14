@@ -10,6 +10,7 @@ import feedparser
 import requests
 
 from .config import Config
+from .llm_dedupe import llm_is_duplicate
 from .state import StateStore
 
 
@@ -42,6 +43,7 @@ REDDIT_FEEDS = [
 
 
 def fetch_hn(limit: int = 50) -> list[TopicCandidate]:
+    """Возвращает кандидатов из Hacker News (top stories) с ключевыми словами."""
     try:
         ids = requests.get("https://hacker-news.firebaseio.com/v0/topstories.json", timeout=15).json()
     except Exception:
@@ -62,6 +64,7 @@ def fetch_hn(limit: int = 50) -> list[TopicCandidate]:
 
 
 def fetch_reddit() -> list[TopicCandidate]:
+    """Возвращает кандидатов из Reddit по заранее заданным фидам."""
     result: list[TopicCandidate] = []
     for url in REDDIT_FEEDS:
         try:
@@ -82,6 +85,7 @@ def fetch_reddit() -> list[TopicCandidate]:
 
 
 def fetch_google_trends() -> list[TopicCandidate]:
+    """Возвращает трендовые запросы Google Trends (Россия)."""
     try:
         from pytrends.request import TrendReq
 
@@ -137,6 +141,7 @@ def fetch_github_trending() -> list[TopicCandidate]:
 
 
 def fetch_telegram_rss() -> list[TopicCandidate]:
+    """Возвращает кандидатов из пользовательских RSS (например, Telegram‑прокси)."""
     feeds = (Config.TELEGRAM_RSS_FEEDS or "").split(",")
     feeds = [f.strip() for f in feeds if f.strip()]
     if not feeds:
@@ -158,6 +163,7 @@ def fetch_telegram_rss() -> list[TopicCandidate]:
 
 
 def select_topic(state: StateStore | None = None) -> dict[str, object]:
+    """Собирает кандидатов из источников, применяет антидубли и выбирает лучшего."""
     state = state or StateStore()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
 
@@ -171,32 +177,18 @@ def select_topic(state: StateStore | None = None) -> dict[str, object]:
     # 48 часов окно
     candidates = [c for c in candidates if c.published_at >= cutoff]
 
-    # Антидубли по истории Ghost (20 дней):
-    # считаем частоты токенов и блокируем якоря len>=7, встречавшиеся в истории ≥1 раз.
+    # LLM‑антидубли по смыслу относительно истории Ghost (20 дней)
     recent_titles = state.get_recent_titles()
-    from .state import StateStore as _SS
-
-    # Применяем фильтр по якорям всегда
-    freq: dict[str, int] = {}
-    for t in recent_titles:
-        for tok in _SS._tokens(t):
-            if len(tok) >= 7:
-                freq[tok] = freq.get(tok, 0) + 1
-    banned_anchors = {t for t, n in freq.items() if n >= 1}
-    if banned_anchors:
-
-        def _anchors(text: str) -> set[str]:
-            return {t for t in _SS._tokens(text) if len(t) >= 7}
-
-        filtered: list[TopicCandidate] = []
-        for c in candidates:
-            if _anchors(c.title) & banned_anchors:
+    filtered: list[TopicCandidate] = []
+    for c in candidates:
+        try:
+            if llm_is_duplicate(c.title, recent_titles):
                 continue
-            filtered.append(c)
-        candidates = filtered
-
-    # антидубль 20 дней (дополнительная страховка)
-    candidates = [c for c in candidates if not state.is_recent_topic(c.title)]
+        except Exception:
+            # при недоступности LLM в этом месте не блокируем
+            pass
+        filtered.append(c)
+    candidates = filtered
 
     # сортировка
     candidates.sort(key=lambda c: c.score, reverse=True)
@@ -228,7 +220,7 @@ def select_topic(state: StateStore | None = None) -> dict[str, object]:
 
 
 def build_outline(title: str) -> list[str]:
-    # Простая эвристика для тезисов
+    """Строит минимальный план статьи по заголовку (эвристика)."""
     return [
         f"Контекст и зачем сейчас: {title}",
         "Быстрый разбор основных понятий",

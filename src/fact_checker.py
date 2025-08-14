@@ -14,6 +14,7 @@ from .config import Config
 
 
 def validate_code_blocks(article_html: str) -> list[str]:
+    """Проверяет синтаксис Python в <pre><code> блоках, возвращает список ошибок."""
     errors: list[str] = []
     try:
         soup = BeautifulSoup(article_html, "html.parser")
@@ -34,6 +35,7 @@ def validate_code_blocks(article_html: str) -> list[str]:
 
 
 def _run_python_piston(code: str) -> tuple[bool, str]:
+    """Выполняет короткий Python‑сниппет в Piston, возвращает (ok, вывод)."""
     if len(code) > 1000:
         return True, "skipped"
     banned = ["import os", "import sys", "subprocess", "open(", "requests."]
@@ -59,6 +61,7 @@ def _run_python_piston(code: str) -> tuple[bool, str]:
 
 
 def _run_python_replit(code: str) -> tuple[bool, str]:
+    """Выполняет сниппет в кастомном шлюзе Replit, если настроен."""
     if not (Config.REPLIT_EVAL_URL and Config.REPLIT_EVAL_TOKEN):
         return False, "replit not configured"
     if len(code) > 1000:
@@ -84,6 +87,7 @@ def _run_python_replit(code: str) -> tuple[bool, str]:
 
 
 def _run_python_in_sandbox(code: str) -> tuple[bool, str]:
+    """Выбирает провайдер песочницы и запускает сниппет."""
     provider = Config.SANDBOX_PROVIDER
     if provider == "replit":
         return _run_python_replit(code)
@@ -91,12 +95,14 @@ def _run_python_in_sandbox(code: str) -> tuple[bool, str]:
 
 
 def _tokenize_topic(topic: str) -> list[str]:
+    """Токенизирует тему для генерации запросов к поиску."""
     tokens = [t for t in re.split(r"[^\w\-\/]+", topic.lower()) if t and len(t) > 2]
     stop = {"the", "and", "for", "with", "from", "this", "that", "open", "available", "device", "local", "run"}
     return [t for t in tokens if t not in stop]
 
 
 def _build_search_queries(topic: str) -> list[str]:
+    """Строит набор поисковых запросов (точные/комбинированные) для CSE."""
     base = topic.strip()
     tokens = _tokenize_topic(base)
     pairs = [t for t in tokens if ("/" in t or "-" in t)]
@@ -126,6 +132,7 @@ def _build_search_queries(topic: str) -> list[str]:
 
 
 def verify_with_search(topic: str, max_checks: int = 8) -> list[str]:
+    """Пытается подтвердить тему через Google CSE; возвращает список ошибок."""
     if not (Config.GOOGLE_API_KEY and Config.GOOGLE_CSE_ID):
         return []
     queries = _build_search_queries(topic)
@@ -155,6 +162,7 @@ def verify_with_search(topic: str, max_checks: int = 8) -> list[str]:
 
 # Дополнительные внешние источники как fallback (без ключей)
 def _evidence_github(tokens: list[str]) -> bool:
+    """Непрямое подтверждение через наличие репозиториев на GitHub."""
     # Проверим, что по ключам есть публичные репозитории — это хорошее непрямое подтверждение
     for t in tokens[:3]:
         try:
@@ -168,6 +176,7 @@ def _evidence_github(tokens: list[str]) -> bool:
 
 
 def _evidence_hn(tokens: list[str]) -> bool:
+    """Непрямое подтверждение через посты на Hacker News."""
     # Algolia HN API без ключей
     for t in tokens[:3]:
         try:
@@ -181,6 +190,7 @@ def _evidence_hn(tokens: list[str]) -> bool:
 
 
 def verify_facts(topic: str) -> list[str]:
+    """Композитная проверка фактов: CSE → GitHub → HN."""
     # 1) Google CSE
     cse_errors = verify_with_search(topic)
     if not cse_errors:
@@ -196,6 +206,7 @@ def verify_facts(topic: str) -> list[str]:
 
 
 def fact_check(article_html: str, topic: str) -> tuple[bool, list[str]]:
+    """Главная функция фактчекинга: синтаксис кода → песочница → поиск фактов."""
     errors: list[str] = []
     # 1) Синтаксис Python
     errors.extend(validate_code_blocks(article_html))

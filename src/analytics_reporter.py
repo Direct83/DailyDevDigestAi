@@ -19,9 +19,11 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from .config import Config
+from .ghost_utils import fetch_posts
 
 
 def _ghost_headers() -> dict[str, str]:
+    """Создаёт заголовок авторизации Ghost (JWT) с выравниванием времени по серверу."""
     if not (Config.GHOST_ADMIN_API_URL and Config.GHOST_ADMIN_API_KEY):
         return {}
     from email.utils import parsedate_to_datetime
@@ -76,53 +78,40 @@ def _ghost_posts_summary(days: int = 7) -> dict[str, object]:
             "slugs": [],
         }
     base = Config.GHOST_ADMIN_API_URL.rstrip("/") + "/ghost/api/admin"
-    headers = _ghost_headers()
     since_dt = datetime.now(timezone.utc) - timedelta(days=days)
     # Ghost NQL дружелюбнее к формату "YYYY-MM-DD HH:MM:SS" без микросекунд/таймзоны
     since = since_dt.strftime("%Y-%m-%d %H:%M:%S")
     logging.info("Ghost summary: base=%s since(utc)=%s", base, since)
     try:
         # Опубликованные за период
-        pub_params = {
-            "filter": f"status:published+published_at:>'{since}'",
-            "order": "published_at desc",
-            "fields": "title,slug,published_at,status",
-            "limit": "100",
-        }
-        r_pub = requests.get(base + "/posts/", headers=headers, params=pub_params, timeout=60)
-        logging.info("GET %s", r_pub.url)
-        r_pub.raise_for_status()
-        data_pub = r_pub.json().get("posts", [])
-        logging.info("Published: status=%s count=%d", r_pub.status_code, len(data_pub))
+        data_pub = fetch_posts(
+            filter=f"status:published+published_at:>'{since}'",
+            fields="title,slug,published_at,status",
+            order="published_at desc",
+            limit=100,
+        )
+        logging.info("Published: count=%d", len(data_pub))
         published = [(p.get("title"), p.get("published_at")) for p in data_pub if p.get("status") == "published"]
         slugs = [p.get("slug") for p in data_pub]
 
         # Запланированные
-        sch_params = {
-            "filter": "status:scheduled",
-            "order": "published_at asc",
-            "fields": "title,published_at,status",
-            "limit": "100",
-        }
-        r_sch = requests.get(base + "/posts/", headers=headers, params=sch_params, timeout=60)
-        logging.info("GET %s", r_sch.url)
-        r_sch.raise_for_status()
-        data_sch = r_sch.json().get("posts", [])
-        logging.info("Scheduled: status=%s count=%d", r_sch.status_code, len(data_sch))
+        data_sch = fetch_posts(
+            filter="status:scheduled",
+            fields="title,published_at,status",
+            order="published_at asc",
+            limit=100,
+        )
+        logging.info("Scheduled: count=%d", len(data_sch))
         scheduled = [(p.get("title"), p.get("published_at")) for p in data_sch if p.get("status") == "scheduled"]
 
         # Черновики (последние обновлённые)
-        draft_params = {
-            "filter": "status:draft",
-            "order": "updated_at desc",
-            "fields": "title,updated_at,status",
-            "limit": "100",
-        }
-        r_draft = requests.get(base + "/posts/", headers=headers, params=draft_params, timeout=60)
-        logging.info("GET %s", r_draft.url)
-        r_draft.raise_for_status()
-        data_draft = r_draft.json().get("posts", [])
-        logging.info("Drafts: status=%s count=%d", r_draft.status_code, len(data_draft))
+        data_draft = fetch_posts(
+            filter="status:draft",
+            fields="title,updated_at,status",
+            order="updated_at desc",
+            limit=100,
+        )
+        logging.info("Drafts: count=%d", len(data_draft))
         drafts = [(p.get("title"), p.get("updated_at")) for p in data_draft if p.get("status") == "draft"]
 
         return {
@@ -148,7 +137,7 @@ def _ghost_posts_summary(days: int = 7) -> dict[str, object]:
 
 
 def _ga4_summary(slugs: list[str]) -> tuple[int, list[tuple[str, int]]]:
-    """Возвращает общее число просмотров и топ-5 страниц по просмотрам за 7 дней.
+    """Возвращает суммарные просмотры и топ‑5 путей из GA4 по слугам (если настроен).
 
     Требует GA4_PROPERTY_ID и GA4_JSON_KEY_PATH.
     """
@@ -188,6 +177,7 @@ def _ga4_summary(slugs: list[str]) -> tuple[int, list[tuple[str, int]]]:
 
 
 def _toclick_ctr() -> float | None:
+    """Возвращает CTR из to.click (0..1) за 7 дней, если доступен ключ."""
     if not Config.TOCLICK_API_KEY:
         return None
     try:
@@ -208,6 +198,8 @@ def _render_pdf(
     ga_top: list[tuple[str, int]],
     ctr: float | None,
 ) -> bytes:
+    """Рендерит PDF‑сводку с кириллицей: counts + списки заголовков."""
+
     def _register_cyrillic_font() -> str | None:
         # 1) Явный путь из ENV
         candidates: list[str] = []
@@ -350,6 +342,7 @@ def _render_pdf(
 
 
 def send_weekly_report() -> str | None:
+    """Собирает сводку, формирует PDF и отправляет письмо. Возвращает 'sent' или None."""
     summary = _ghost_posts_summary(7)
     ga_total, ga_top = _ga4_summary(summary.get("slugs", []))  # type: ignore
     ctr = _toclick_ctr()

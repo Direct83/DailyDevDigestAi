@@ -58,6 +58,10 @@ pre-commit install
   - Аналитика/отчёт: `src/analytics_reporter.py`
   - Рекламные вставки: `src/cta_inserter.py`
   - Конфигурация/состояние: `src/config.py`, `src/state.py`
+  - Оркестратор (граф/стейт‑машина): `src/agent/graph.py` (узлы: SelectTopic → GenerateArticle → FactCheck → GenerateCover → InsertCTA → Publish)
+  - Узел CTA: `src/agent/cta_node.py`
+  - Домен антидублей: `src/domain/dedup.py`
+  - Утилиты Ghost Admin API: `src/ghost_utils.py`
 
 - Внешние сервисы и взаимодействия:
   - OpenAI (Chat, Images) — генерация текста и обложки
@@ -69,9 +73,9 @@ pre-commit install
   - SMTP — отправка еженедельного PDF‑отчёта
 
 - Потоки данных:
-  - Триггеры: планировщик ОС вызывает `src/main.py` (`run-once` в 07:00, `weekly` в 19:00 вс)
+  - Триггеры: планировщик ОС вызывает `src/main.py` (`run-once` или `daily` в 07:00, `weekly` в 19:00 вс)
   - Входные данные: публичные фиды (HN/Reddit/Trends/GitHub), переменные окружения `.env`
-  - Процесс: тема → текст → проверка → обложка → пост (Ghost)
+  - Процесс (граф/стейт‑машина): SelectTopic → GenerateArticle → FactCheck (1 пересборка при провале) → GenerateCover → InsertCTA → Publish@11:00 МСК (или сразу) → краткий лог
   - Отчёт: сбор данных (Ghost/GA4/to.click) → PDF → email
 
 - Хранилища и состояние:
@@ -97,3 +101,4 @@ pre-commit install
 - **Конфигурация и время**: python-dotenv, pytz
 - **Качество кода**: Ruff (линт/форматирование) + pre-commit
 - **Планирование**: планировщик ОС (Windows Task Scheduler/cron)
+ - **Архитектура**: стейт‑машина (graph) — `src/agent/graph.py`

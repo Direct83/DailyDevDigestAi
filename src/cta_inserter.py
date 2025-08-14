@@ -22,12 +22,15 @@ class CTA:
 
 
 class CTAProvider:
+    """Провайдер CTA: собирает карточки из ENV/to.click/файла и выбирает 1–2 штуки."""
+
     def __init__(self, path: Path | None = None) -> None:
         self.path = path  # локальный файл больше не обязателен
         self._ctas: list[CTA] = []
         self._load()
 
     def _load(self) -> None:
+        """Загружает CTA из доступных источников, нормализует и сортирует."""
         # 1) ENV CTAS_JSON
         if Config.CTAS_JSON:
             try:
@@ -74,6 +77,7 @@ class CTAProvider:
         self._ctas.sort(key=sort_key)
 
     def pick_pair(self) -> list[CTA]:
+        """Возвращает до 2 CTA с приоритетом: free + course (если доступны)."""
         free = [c for c in self._ctas if c.type.lower() in {"free", "freebie"}]
         course = [c for c in self._ctas if c.type.lower() in {"course", "program"}]
         result: list[CTA] = []
@@ -89,6 +93,7 @@ class CTAProvider:
 
     @staticmethod
     def render_cta_html(cta: CTA) -> str:
+        """Рендерит HTML‑блок CTA (минимальный стиль)."""
         return (
             f'<div class="cta-block" style="border:1px solid #eee;padding:16px;border-radius:8px;margin:24px 0;">'
             f'<div style="font-weight:700;margin-bottom:8px;">{cta.title}</div>'

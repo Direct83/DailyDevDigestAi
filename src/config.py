@@ -40,41 +40,41 @@ def _df_int(name: str, default: int):
 class Config:
     # OpenAI
     OPENAI_API_KEY: str | None = get_env("OPENAI_API_KEY")
-    OPENAI_MODEL: str = get_env("OPENAI_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
+    OPENAI_MODEL: str = get_env("OPENAI_MODEL", "gpt-4o") or "gpt-4o"
     OPENAI_IMAGE_MODEL: str = get_env("OPENAI_IMAGE_MODEL", "dall-e-3") or "dall-e-3"
 
-    # Ghost Admin
+    # Ghost Admin API
     GHOST_ADMIN_API_URL: str | None = get_env("GHOST_ADMIN_API_URL")
     GHOST_ADMIN_API_KEY: str | None = get_env("GHOST_ADMIN_API_KEY")  # format: <id>:<secret_hex>
 
-    # Content API (опционально)
-    GHOST_CONTENT_API_URL: str | None = get_env("GHOST_CONTENT_API_URL")
-    GHOST_CONTENT_API_KEY: str | None = get_env("GHOST_CONTENT_API_KEY")
-
-    # Google CSE (фактчекинг)
+    # Google Custom Search (для фактчекинга)
     GOOGLE_API_KEY: str | None = get_env("GOOGLE_API_KEY")
     GOOGLE_CSE_ID: str | None = get_env("GOOGLE_CSE_ID")
 
-    # GA4 (опционально)
+    # Google Analytics 4 (для аналитики: сбор данных о просмотрах)
     GA4_PROPERTY_ID: str | None = get_env("GA4_PROPERTY_ID")
     GA4_JSON_KEY_PATH: str | None = get_env("GA4_JSON_KEY_PATH")
 
-    # to.click
+    # Ghost Content API (для аналитики: сбор данных о просмотрах)
+    GHOST_CONTENT_API_URL: str | None = get_env("GHOST_CONTENT_API_URL")
+    GHOST_CONTENT_API_KEY: str | None = get_env("GHOST_CONTENT_API_KEY")
+
+    # to.click (CTR на CTA)
     TOCLICK_API_KEY: str | None = get_env("TOCLICK_API_KEY")
     TOCLICK_BASE_URL: str = get_env("TOCLICK_BASE_URL", "https://to.click/api") or "https://to.click/api"
 
-    # CTA из ENV (JSON)
+    # CTA (JSON-массив), пример см. env.example
     CTAS_JSON: str | None = get_env("CTAS_JSON")
 
-    # Telegram RSS (через любые публичные RSS-прокси на каналы)
-    TELEGRAM_RSS_FEEDS: str | None = get_env("TELEGRAM_RSS_FEEDS")  # comma-separated URLs
+    # Telegram RSS (выбор популярных тем — список URL через запятую)
+    TELEGRAM_RSS_FEEDS: str | None = get_env("TELEGRAM_RSS_FEEDS")
 
-    # Песочница исполнения кода: replit | piston (по умолчанию piston)
+    # Песочница кода: piston (по умолчанию) или replit
     SANDBOX_PROVIDER: str = (get_env("SANDBOX_PROVIDER", "piston") or "piston").lower()
-    REPLIT_EVAL_URL: str | None = get_env("REPLIT_EVAL_URL")  # например, https://eval.api.replit.com/eval
-    REPLIT_EVAL_TOKEN: str | None = get_env("REPLIT_EVAL_TOKEN")  # Bearer token
+    REPLIT_EVAL_URL: str | None = get_env("REPLIT_EVAL_URL")
+    REPLIT_EVAL_TOKEN: str | None = get_env("REPLIT_EVAL_TOKEN")
 
-    # SMTP
+    # SMTP (для отправки отчётов)
     SMTP_HOST: str | None = get_env("SMTP_HOST")
     SMTP_PORT: int = int(get_env("SMTP_PORT", "587") or "587")
     SMTP_USER: str | None = get_env("SMTP_USER")
