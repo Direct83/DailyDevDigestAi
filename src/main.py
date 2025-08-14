@@ -20,6 +20,9 @@ app = typer.Typer(help="DailyDevDigestAi — публикация статей �
 
 def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # Урезаем болтливые внешние логгеры
+    for noisy in ("httpx", "urllib3", "requests", "PIL", "matplotlib"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 @app.command()
@@ -45,6 +48,8 @@ def run_once() -> None:
         ok2, errs2 = fact_check(html, title)
         if not ok2:
             logging.error("Фактчекинг повторно не пройден: %s", "; ".join(errs2))
+            # По ТЗ: при неподтверждении факта после пересборки публикацию останавливаем
+            return
 
     # Обложка (в памяти)
     cover_bytes = generate_cover_bytes(title)
@@ -53,7 +58,16 @@ def run_once() -> None:
     try:
         publisher = GhostPublisher()
         res = publisher.publish(title=title, html=html, tags=tags, feature_image_bytes=cover_bytes, schedule_msk_11=True)
-        logging.info("Опубликовано/запланировано: %s", res)
+        # Краткий итог вместо полного JSON
+        try:
+            posts = (res or {}).get("posts", [])
+            p = posts[0] if posts else {}
+            logging.info(
+                "Опубликовано/запланировано: id=%s title=%s status=%s url=%s",
+                p.get("id"), p.get("title"), p.get("status"), (res or {}).get("url"),
+            )
+        except Exception:
+            logging.info("Опубликовано/запланировано")
         state.add_topic(title)
     except Exception as e:
         logging.warning("Публикация пропущена: %s", e)

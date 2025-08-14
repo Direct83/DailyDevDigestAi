@@ -14,6 +14,8 @@ def _openai_client():
     try:
         from openai import OpenAI
 
+        if Config.OPENAI_BASE_URL:
+            return OpenAI(api_key=Config.OPENAI_API_KEY, base_url=Config.OPENAI_BASE_URL)
         return OpenAI(api_key=Config.OPENAI_API_KEY)
     except Exception:
         return None
@@ -50,6 +52,7 @@ def generate_article(topic: str, outline: List[str], tags: List[str]) -> Tuple[s
         system = (
             "Ты технический редактор блога буткемпа по IT. Пиши по-русски, живым стилем. "
             "Структура: интригующее вступление, разделы h2/h3, примеры кода где уместно. "
+            "Примеры кода должны быть исполняемыми и использовать только стандартную библиотеку Python (без сторонних пакетов). "
             "Длина 4000–8000 символов. Используй HTML (h2/h3/p/pre/code/ul/ol/li). Без Markdown."
         )
         outline_html = "".join(f"<li>{p}</li>" for p in outline)

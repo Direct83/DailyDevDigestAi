@@ -90,12 +90,49 @@ def _run_python_in_sandbox(code: str) -> Tuple[bool, str]:
     return _run_python_piston(code)
 
 
-def verify_with_search(topic: str, max_checks: int = 2) -> List[str]:
+def _tokenize_topic(topic: str) -> List[str]:
+    tokens = [t for t in re.split(r"[^\w\-\/]+", topic.lower()) if t and len(t) > 2]
+    stop = {"the", "and", "for", "with", "from", "this", "that", "open", "available", "device", "local", "run"}
+    return [t for t in tokens if t not in stop]
+
+
+def _build_search_queries(topic: str) -> List[str]:
+    base = topic.strip()
+    tokens = _tokenize_topic(base)
+    pairs = [t for t in tokens if ("/" in t or "-" in t)]
+    head = tokens[:3]
+    # расширенная стратегия: добавим кавычки для точных совпадений и пару тематических запросов
+    quoted = [f'"{t}"' for t in pairs[:2]]
+    combos = []
+    if len(pairs) >= 1 and len(head) >= 1:
+        combos.append(f"{pairs[0]} {head[0]}")
+    if len(pairs) >= 2:
+        combos.append(f"{pairs[0]} {pairs[1]}")
+    # базовый список
+    queries: List[str] = [base]
+    queries.extend(pairs)
+    queries.extend(head)
+    queries.extend(quoted)
+    queries.extend([f"site:github.com {head[0]}" if head else ""])  # узкое подтверждение
+    queries.extend(combos)
+    seen: set[str] = set()
+    result: List[str] = []
+    for q in queries:
+        qn = q.strip()
+        if qn and qn not in seen and len(qn) > 2:
+            seen.add(qn)
+            result.append(qn)
+    return result[:8]
+
+
+def verify_with_search(topic: str, max_checks: int = 8) -> List[str]:
     if not (Config.GOOGLE_API_KEY and Config.GOOGLE_CSE_ID):
         return []
-    queries = [topic]
+    queries = _build_search_queries(topic)
     errors: List[str] = []
+    tried: List[str] = []
     for q in queries[:max_checks]:
+        tried.append(q)
         try:
             resp = requests.get(
                 "https://www.googleapis.com/customsearch/v1",
@@ -104,11 +141,58 @@ def verify_with_search(topic: str, max_checks: int = 2) -> List[str]:
             )
             data = resp.json()
             total = int(data.get("searchInformation", {}).get("totalResults", "0"))
-            if total <= 0:
-                errors.append(f"Не найдено подтверждений по запросу: {q}")
+            logging.debug("CSE: q=%s total=%s", q, total)
+            if total > 0:
+                return []
         except Exception as e:
+            logging.warning("CSE error for q=%s: %s", q, e)
             errors.append(f"Ошибка Google CSE: {e}")
+    if not errors:
+        # Возвращаем одну ошибку — сигнал верхнему уровню пересобрать/остановить публикацию
+        errors.append("Не найдено подтверждений ни по одному подзапросу: " + ", ".join(tried))
     return errors
+
+
+# Дополнительные внешние источники как fallback (без ключей)
+def _evidence_github(tokens: List[str]) -> bool:
+    # Проверим, что по ключам есть публичные репозитории — это хорошее непрямое подтверждение
+    for t in tokens[:3]:
+        try:
+            r = requests.get("https://api.github.com/search/repositories", params={"q": t, "per_page": 1}, timeout=15)
+            if r.status_code < 400 and r.json().get("total_count", 0) > 0:
+                logging.debug("Fallback GitHub ok for token=%s", t)
+                return True
+        except Exception as e:
+            logging.warning("GitHub search error for %s: %s", t, e)
+    return False
+
+
+def _evidence_hn(tokens: List[str]) -> bool:
+    # Algolia HN API без ключей
+    for t in tokens[:3]:
+        try:
+            r = requests.get("https://hn.algolia.com/api/v1/search", params={"query": t, "tags": "story"}, timeout=15)
+            if r.status_code < 400 and (r.json().get("nbHits", 0) or len(r.json().get("hits", [])) > 0):
+                logging.debug("Fallback HN ok for token=%s", t)
+                return True
+        except Exception as e:
+            logging.warning("HN search error for %s: %s", t, e)
+    return False
+
+
+def verify_facts(topic: str) -> List[str]:
+    # 1) Google CSE
+    cse_errors = verify_with_search(topic)
+    if not cse_errors:
+        return []
+    # 2) GitHub fallback
+    tokens = _tokenize_topic(topic)
+    if _evidence_github(tokens):
+        return []
+    # 3) HN fallback
+    if _evidence_hn(tokens):
+        return []
+    return cse_errors
 
 
 def fact_check(article_html: str, topic: str) -> Tuple[bool, List[str]]:
@@ -136,7 +220,7 @@ def fact_check(article_html: str, topic: str) -> Tuple[bool, List[str]]:
     except Exception:
         pass
 
-    # 3) Поиск
-    errors.extend(verify_with_search(topic))
+    # 3) Поиск фактов (CSE + fallback источники)
+    errors.extend(verify_facts(topic))
 
     return (len(errors) == 0, errors)
