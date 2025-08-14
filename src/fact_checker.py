@@ -1,11 +1,11 @@
 """Модуль фактчекинга."""
+
 from __future__ import annotations
 
 import ast
 import html
 import logging
 import re
-from typing import List, Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -13,8 +13,8 @@ from bs4 import BeautifulSoup
 from .config import Config
 
 
-def validate_code_blocks(article_html: str) -> List[str]:
-    errors: List[str] = []
+def validate_code_blocks(article_html: str) -> list[str]:
+    errors: list[str] = []
     try:
         soup = BeautifulSoup(article_html, "html.parser")
         for pre in soup.find_all("pre"):
@@ -33,7 +33,7 @@ def validate_code_blocks(article_html: str) -> List[str]:
     return errors
 
 
-def _run_python_piston(code: str) -> Tuple[bool, str]:
+def _run_python_piston(code: str) -> tuple[bool, str]:
     if len(code) > 1000:
         return True, "skipped"
     banned = ["import os", "import sys", "subprocess", "open(", "requests."]
@@ -52,13 +52,13 @@ def _run_python_piston(code: str) -> Tuple[bool, str]:
         data = r.json()
         run = data.get("run", {})
         out = (run.get("stdout") or "") + (run.get("stderr") or "")
-        ok = (run.get("code") == 0)
+        ok = run.get("code") == 0
         return ok, out.strip()
     except Exception as e:
         return False, str(e)
 
 
-def _run_python_replit(code: str) -> Tuple[bool, str]:
+def _run_python_replit(code: str) -> tuple[bool, str]:
     if not (Config.REPLIT_EVAL_URL and Config.REPLIT_EVAL_TOKEN):
         return False, "replit not configured"
     if len(code) > 1000:
@@ -83,20 +83,20 @@ def _run_python_replit(code: str) -> Tuple[bool, str]:
         return False, str(e)
 
 
-def _run_python_in_sandbox(code: str) -> Tuple[bool, str]:
+def _run_python_in_sandbox(code: str) -> tuple[bool, str]:
     provider = Config.SANDBOX_PROVIDER
     if provider == "replit":
         return _run_python_replit(code)
     return _run_python_piston(code)
 
 
-def _tokenize_topic(topic: str) -> List[str]:
+def _tokenize_topic(topic: str) -> list[str]:
     tokens = [t for t in re.split(r"[^\w\-\/]+", topic.lower()) if t and len(t) > 2]
     stop = {"the", "and", "for", "with", "from", "this", "that", "open", "available", "device", "local", "run"}
     return [t for t in tokens if t not in stop]
 
 
-def _build_search_queries(topic: str) -> List[str]:
+def _build_search_queries(topic: str) -> list[str]:
     base = topic.strip()
     tokens = _tokenize_topic(base)
     pairs = [t for t in tokens if ("/" in t or "-" in t)]
@@ -109,14 +109,14 @@ def _build_search_queries(topic: str) -> List[str]:
     if len(pairs) >= 2:
         combos.append(f"{pairs[0]} {pairs[1]}")
     # базовый список
-    queries: List[str] = [base]
+    queries: list[str] = [base]
     queries.extend(pairs)
     queries.extend(head)
     queries.extend(quoted)
     queries.extend([f"site:github.com {head[0]}" if head else ""])  # узкое подтверждение
     queries.extend(combos)
     seen: set[str] = set()
-    result: List[str] = []
+    result: list[str] = []
     for q in queries:
         qn = q.strip()
         if qn and qn not in seen and len(qn) > 2:
@@ -125,12 +125,12 @@ def _build_search_queries(topic: str) -> List[str]:
     return result[:8]
 
 
-def verify_with_search(topic: str, max_checks: int = 8) -> List[str]:
+def verify_with_search(topic: str, max_checks: int = 8) -> list[str]:
     if not (Config.GOOGLE_API_KEY and Config.GOOGLE_CSE_ID):
         return []
     queries = _build_search_queries(topic)
-    errors: List[str] = []
-    tried: List[str] = []
+    errors: list[str] = []
+    tried: list[str] = []
     for q in queries[:max_checks]:
         tried.append(q)
         try:
@@ -154,7 +154,7 @@ def verify_with_search(topic: str, max_checks: int = 8) -> List[str]:
 
 
 # Дополнительные внешние источники как fallback (без ключей)
-def _evidence_github(tokens: List[str]) -> bool:
+def _evidence_github(tokens: list[str]) -> bool:
     # Проверим, что по ключам есть публичные репозитории — это хорошее непрямое подтверждение
     for t in tokens[:3]:
         try:
@@ -167,7 +167,7 @@ def _evidence_github(tokens: List[str]) -> bool:
     return False
 
 
-def _evidence_hn(tokens: List[str]) -> bool:
+def _evidence_hn(tokens: list[str]) -> bool:
     # Algolia HN API без ключей
     for t in tokens[:3]:
         try:
@@ -180,7 +180,7 @@ def _evidence_hn(tokens: List[str]) -> bool:
     return False
 
 
-def verify_facts(topic: str) -> List[str]:
+def verify_facts(topic: str) -> list[str]:
     # 1) Google CSE
     cse_errors = verify_with_search(topic)
     if not cse_errors:
@@ -195,8 +195,8 @@ def verify_facts(topic: str) -> List[str]:
     return cse_errors
 
 
-def fact_check(article_html: str, topic: str) -> Tuple[bool, List[str]]:
-    errors: List[str] = []
+def fact_check(article_html: str, topic: str) -> tuple[bool, list[str]]:
+    errors: list[str] = []
     # 1) Синтаксис Python
     errors.extend(validate_code_blocks(article_html))
 

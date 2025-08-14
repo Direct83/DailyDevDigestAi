@@ -2,13 +2,14 @@
 
 Используется для централизованного управления ключами и параметрами.
 """
+
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
+
 from dotenv import load_dotenv
-from dataclasses import dataclass
-from typing import Optional
 
 # Загружаем .env при наличии
 load_dotenv()
@@ -19,6 +20,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 def get_env(name: str, default: str | None = None) -> str | None:
     value = os.getenv(name)
     return value if value not in (None, "", "None") else default
+
+
+def _df_str(name: str, default: str | None = None):
+    """Default factory: str or None from env with fallback."""
+    return lambda: get_env(name, default)
+
+
+def _df_str_nn(name: str, default: str):
+    """Default factory: non-nullable str from env with fallback to default."""
+    return lambda: get_env(name, default) or default
+
+
+def _df_int(name: str, default: int):
+    """Default factory: int from env with fallback to default."""
+    return lambda: int(get_env(name, str(default)) or str(default))
 
 
 class Config:
@@ -79,42 +95,44 @@ class Config:
 
 @dataclass(frozen=True)
 class TimeConfig:
-    timezone: str = os.getenv("APP_TIMEZONE", "Europe/Moscow")
-    daily_select_hour: int = int(os.getenv("DAILY_SELECT_HOUR", "7"))
-    daily_publish_hour: int = int(os.getenv("DAILY_PUBLISH_HOUR", "11"))
-    weekly_report_weekday: int = int(os.getenv("WEEKLY_REPORT_WEEKDAY", "6"))  # 0=Mon, 6=Sun
-    weekly_report_hour: int = int(os.getenv("WEEKLY_REPORT_HOUR", "19"))
+    timezone: str = field(default_factory=_df_str_nn("APP_TIMEZONE", "Europe/Moscow"))
+    daily_select_hour: int = field(default_factory=_df_int("DAILY_SELECT_HOUR", 7))
+    daily_publish_hour: int = field(default_factory=_df_int("DAILY_PUBLISH_HOUR", 11))
+    weekly_report_weekday: int = field(default_factory=_df_int("WEEKLY_REPORT_WEEKDAY", 6))  # 0=Mon, 6=Sun
+    weekly_report_hour: int = field(default_factory=_df_int("WEEKLY_REPORT_HOUR", 19))
 
 
 @dataclass(frozen=True)
 class OpenAIConfig:
-    api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
-    model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    image_model: str = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
+    api_key: str | None = field(default_factory=_df_str("OPENAI_API_KEY"))
+    model: str = field(default_factory=_df_str_nn("OPENAI_MODEL", "gpt-4o-mini"))
+    image_model: str = field(default_factory=_df_str_nn("OPENAI_IMAGE_MODEL", "gpt-image-1"))
 
 
 @dataclass(frozen=True)
 class GhostConfig:
-    admin_api_url: Optional[str] = os.getenv("GHOST_ADMIN_API_URL")  # например: https://blog.example.com/ghost/api/admin
-    admin_api_key: Optional[str] = os.getenv("GHOST_ADMIN_API_KEY")
+    admin_api_url: str | None = field(
+        default_factory=_df_str("GHOST_ADMIN_API_URL"),
+    )  # например: https://blog.example.com/ghost/api/admin
+    admin_api_key: str | None = field(default_factory=_df_str("GHOST_ADMIN_API_KEY"))
     default_tags: tuple[str, ...] = ("AI Generated",)
 
 
 @dataclass(frozen=True)
 class EmailConfig:
-    smtp_host: Optional[str] = os.getenv("SMTP_HOST")
-    smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user: Optional[str] = os.getenv("SMTP_USER")
-    smtp_password: Optional[str] = os.getenv("SMTP_PASSWORD")
-    from_email: Optional[str] = os.getenv("FROM_EMAIL")
-    to_email: Optional[str] = os.getenv("TO_EMAIL")
+    smtp_host: str | None = field(default_factory=_df_str("SMTP_HOST"))
+    smtp_port: int = field(default_factory=_df_int("SMTP_PORT", 587))
+    smtp_user: str | None = field(default_factory=_df_str("SMTP_USER"))
+    smtp_password: str | None = field(default_factory=_df_str("SMTP_PASSWORD"))
+    from_email: str | None = field(default_factory=_df_str("FROM_EMAIL"))
+    to_email: str | None = field(default_factory=_df_str("TO_EMAIL"))
 
 
 @dataclass(frozen=True)
 class PathsConfig:
-    data_dir: str = os.getenv("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data"))
-    state_file: str = os.getenv("STATE_FILE", os.path.join(os.path.dirname(__file__), "..", "data", "state.json"))
-    ctas_file: str = os.getenv("CTAS_FILE", os.path.join(os.path.dirname(__file__), "..", "data", "ctas.json"))
+    data_dir: str = field(default_factory=_df_str_nn("DATA_DIR", str(PROJECT_ROOT / "data")))
+    state_file: str = field(default_factory=_df_str_nn("STATE_FILE", str(PROJECT_ROOT / "data" / "state.json")))
+    ctas_file: str = field(default_factory=_df_str_nn("CTAS_FILE", str(PROJECT_ROOT / "data" / "ctas.json")))
 
 
 @dataclass(frozen=True)
@@ -130,19 +148,19 @@ class SourcesConfig:
                 [
                     "https://habr.com/ru/rss/all/all/?fl=ru",
                     # Добавляйте свои ленты: TG через RSS‑прокси, корпоративные блоги и т.п.
-                ]
+                ],
             ),
         ).split(",")
         if s.strip()
     )
-    github_language_filter: str = os.getenv("GITHUB_LANG", "Python,TypeScript,JavaScript")
-    google_trends_geo: str = os.getenv("GOOGLE_TRENDS_GEO", "RU")
+    github_language_filter: str = field(default_factory=_df_str_nn("GITHUB_LANG", "Python,TypeScript,JavaScript"))
+    google_trends_geo: str = field(default_factory=_df_str_nn("GOOGLE_TRENDS_GEO", "RU"))
 
 
 @dataclass(frozen=True)
 class GoogleSearchConfig:
-    api_key: Optional[str] = os.getenv("GOOGLE_API_KEY")
-    cse_id: Optional[str] = os.getenv("GOOGLE_CSE_ID")
+    api_key: str | None = field(default_factory=_df_str("GOOGLE_API_KEY"))
+    cse_id: str | None = field(default_factory=_df_str("GOOGLE_CSE_ID"))
 
 
 time_config = TimeConfig()
@@ -152,5 +170,3 @@ email_config = EmailConfig()
 paths_config = PathsConfig()
 sources_config = SourcesConfig()
 google_search_config = GoogleSearchConfig()
-
-

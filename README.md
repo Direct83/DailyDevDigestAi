@@ -27,6 +27,15 @@ cp env.example .env
 ```
 Если ключей нет, пройдёт упрощённый сценарий (без реальной публикации и части проверок).
 
+4) (Опционально) Линтер/форматтер для разработки
+```bash
+./.venv/Scripts/python.exe -m pip install ruff pre-commit
+pre-commit install
+# ручной запуск
+./.venv/Scripts/python.exe -m ruff check . --fix
+./.venv/Scripts/python.exe -m ruff format .
+```
+
 ## Запуск и расписание
 
 - Разовая публикация (для проверки):
@@ -77,13 +86,14 @@ cp env.example .env
 
 ## Технологический стек
 
-- **Язык и CLI**: Python 3.x, Typer
+- **Язык и CLI**: Python 3.10+, Typer
 - **Сетевые вызовы и парсинг**: requests, BeautifulSoup4, feedparser
 - **Источники тем**: Hacker News (REST), Reddit (RSS/JSON), Google Trends (pytrends), GitHub Trending (HTML‑парсинг), Telegram RSS (опц.), Yandex Suggest (опц.)
-- **Генерация контента и обложек**: OpenAI Python SDK (Chat Completions, Images), Pillow
+- **Генерация контента и обложек**: OpenAI Python SDK (Chat Completions, Images DALL‑E 3), Pillow
 - **Фактчекинг**: AST‑проверка Python, Piston API (песочница сниппетов) / Replit API (опц.), Google Custom Search API
-- **Публикация**: Ghost Admin API, PyJWT (JWT для Ghost)
+- **Публикация**: Ghost Admin API, PyJWT (JWT для Ghost, выравнивание времени по заголовку Date)
 - **Аналитика**: Google Analytics 4 (google-analytics-data), Ghost Admin API (метаданные постов), to.click (CTR)
 - **Отчёты**: reportlab (PDF), SMTP (отправка email)
 - **Конфигурация и время**: python-dotenv, pytz
+- **Качество кода**: Ruff (линт/форматирование) + pre-commit
 - **Планирование**: планировщик ОС (Windows Task Scheduler/cron)

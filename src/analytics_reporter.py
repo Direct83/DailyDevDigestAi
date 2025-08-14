@@ -1,4 +1,5 @@
 """Модуль сборки и отправки аналитики."""
+
 from __future__ import annotations
 
 import io
@@ -7,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Dict, List, Optional, Tuple
 
 import requests
 from reportlab.lib.pagesizes import A4
@@ -16,7 +16,7 @@ from reportlab.pdfgen import canvas
 from .config import Config
 
 
-def _ghost_headers() -> Dict[str, str]:
+def _ghost_headers() -> dict[str, str]:
     if not (Config.GHOST_ADMIN_API_URL and Config.GHOST_ADMIN_API_KEY):
         return {}
     import jwt
@@ -29,14 +29,18 @@ def _ghost_headers() -> Dict[str, str]:
     return {"Authorization": f"Ghost {token}"}
 
 
-def _ghost_posts_summary(days: int = 7) -> Dict[str, object]:
+def _ghost_posts_summary(days: int = 7) -> dict[str, object]:
     if not Config.GHOST_ADMIN_API_URL:
         return {"count": 0, "titles": []}
     base = Config.GHOST_ADMIN_API_URL.rstrip("/") + "/ghost/api/admin"
     headers = _ghost_headers()
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     try:
-        r = requests.get(base + f"/posts/?filter=published_at:>\"{since}\"&fields=title,slug,published_at&limit=50", headers=headers, timeout=60)
+        r = requests.get(
+            base + f'/posts/?filter=published_at:>"{since}"&fields=title,slug,published_at&limit=50',
+            headers=headers,
+            timeout=60,
+        )
         r.raise_for_status()
         data = r.json().get("posts", [])
         titles = [p.get("title") for p in data]
@@ -46,7 +50,7 @@ def _ghost_posts_summary(days: int = 7) -> Dict[str, object]:
         return {"count": 0, "titles": [], "slugs": []}
 
 
-def _ga4_summary(slugs: List[str]) -> Tuple[int, List[Tuple[str, int]]]:
+def _ga4_summary(slugs: list[str]) -> tuple[int, list[tuple[str, int]]]:
     """Возвращает общее число просмотров и топ-5 страниц по просмотрам за 7 дней.
 
     Требует GA4_PROPERTY_ID и GA4_JSON_KEY_PATH.
@@ -56,7 +60,6 @@ def _ga4_summary(slugs: List[str]) -> Tuple[int, List[Tuple[str, int]]]:
     try:
         from google.analytics.data_v1beta import BetaAnalyticsDataClient
         from google.analytics.data_v1beta.types import DateRange, Dimension, Metric, RunReportRequest
-        import json
         from google.oauth2 import service_account
 
         credentials = service_account.Credentials.from_service_account_file(Config.GA4_JSON_KEY_PATH)
@@ -66,7 +69,12 @@ def _ga4_summary(slugs: List[str]) -> Tuple[int, List[Tuple[str, int]]]:
         dimensions = [Dimension(name="pagePath")]
         metrics = [Metric(name="screenPageViews")]
         date_ranges = [DateRange(start_date="7daysAgo", end_date="today")]
-        request = RunReportRequest(property=property_id, dimensions=dimensions, metrics=metrics, date_ranges=date_ranges)
+        request = RunReportRequest(
+            property=property_id,
+            dimensions=dimensions,
+            metrics=metrics,
+            date_ranges=date_ranges,
+        )
         resp = client.run_report(request)
         total = 0
         rows = []
@@ -82,7 +90,7 @@ def _ga4_summary(slugs: List[str]) -> Tuple[int, List[Tuple[str, int]]]:
         return 0, []
 
 
-def _toclick_ctr() -> Optional[float]:
+def _toclick_ctr() -> float | None:
     if not Config.TOCLICK_API_KEY:
         return None
     try:
@@ -97,14 +105,19 @@ def _toclick_ctr() -> Optional[float]:
     return None
 
 
-def _render_pdf(summary: Dict[str, object], ga_total: int, ga_top: List[Tuple[str, int]], ctr: Optional[float]) -> bytes:
+def _render_pdf(
+    summary: dict[str, object],
+    ga_total: int,
+    ga_top: list[tuple[str, int]],
+    ctr: float | None,
+) -> bytes:
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
     c.setFont("Helvetica-Bold", 16)
     c.drawString(40, height - 40, "Еженедельная сводка блога")
     c.setFont("Helvetica", 12)
-    c.drawString(40, height - 70, f"Период: последние 7 дней")
+    c.drawString(40, height - 70, "Период: последние 7 дней")
     c.drawString(40, height - 90, f"Количество публикаций: {summary.get('count', 0)}")
     if ga_total:
         c.drawString(40, height - 110, f"GA4 — суммарные просмотры: {ga_total}")
@@ -135,7 +148,7 @@ def _render_pdf(summary: Dict[str, object], ga_total: int, ga_top: List[Tuple[st
     return buf.getvalue()
 
 
-def send_weekly_report() -> Optional[str]:
+def send_weekly_report() -> str | None:
     summary = _ghost_posts_summary(7)
     ga_total, ga_top = _ga4_summary(summary.get("slugs", []))  # type: ignore
     ctr = _toclick_ctr()

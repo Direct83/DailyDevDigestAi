@@ -1,4 +1,5 @@
 """Главный модуль оркестрации пайплайна."""
+
 from __future__ import annotations
 
 import logging
@@ -9,11 +10,10 @@ from .analytics_reporter import send_weekly_report
 from .article_generator import generate_article, generate_russian_title
 from .config import Config
 from .cover_generator import generate_cover_bytes
+from .fact_checker import fact_check
 from .publisher import GhostPublisher
 from .state import StateStore
 from .topics_selector import select_topic
-from .fact_checker import fact_check
-
 
 app = typer.Typer(help="DailyDevDigestAi — публикация статей и отчёты")
 
@@ -59,14 +59,23 @@ def run_once() -> None:
     # Публикация (если настроен Ghost)
     try:
         publisher = GhostPublisher()
-        res = publisher.publish(title=title, html=html, tags=tags, feature_image_bytes=cover_bytes, schedule_msk_11=True)
+        res = publisher.publish(
+            title=title,
+            html=html,
+            tags=tags,
+            feature_image_bytes=cover_bytes,
+            schedule_msk_11=True,
+        )
         # Краткий итог вместо полного JSON
         try:
             posts = (res or {}).get("posts", [])
             p = posts[0] if posts else {}
             logging.info(
                 "Опубликовано/запланировано: id=%s title=%s status=%s feature_image=%s",
-                p.get("id"), p.get("title"), p.get("status"), p.get("feature_image"),
+                p.get("id"),
+                p.get("title"),
+                p.get("status"),
+                p.get("feature_image"),
             )
         except Exception:
             logging.info("Опубликовано/запланировано")

@@ -1,20 +1,21 @@
 """Хранилище состояния: предотвращение повторов тем в течение N дней."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Set, ClassVar
+import logging
 import re
 import time
-import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+from typing import ClassVar
 
 import requests
 
 from .config import Config
-from email.utils import parsedate_to_datetime
 
 
-def _ghost_headers() -> Dict[str, str]:
+def _ghost_headers() -> dict[str, str]:
     """JWT с учётом серверного времени Ghost (устойчивее к расхождению часов)."""
     if not (Config.GHOST_ADMIN_API_URL and Config.GHOST_ADMIN_API_KEY):
         return {}
@@ -56,7 +57,7 @@ class StateStore:
         headers = _ghost_headers()
         try:
             # Ищем по updated_at за 20 дней во всех статусах, затем сравниваем заголовки без регистра
-            q = f"updated_at:>\"{since}\""
+            q = f'updated_at:>"{since}"'
             r = requests.get(
                 base + f"/posts/?filter={q}&fields=title,updated_at,status&limit=50&order=updated_at%20desc",
                 headers=headers,
@@ -74,7 +75,7 @@ class StateStore:
         # Больше не храним локально; факт публикации есть в Ghost
         return
 
-    def get_recent_titles(self) -> List[str]:
+    def get_recent_titles(self) -> list[str]:
         if not Config.GHOST_ADMIN_API_URL:
             logging.info("Ghost not configured; recent_titles=0")
             return []
@@ -84,7 +85,7 @@ class StateStore:
         last_err: Exception | None = None
         for attempt in range(3):
             try:
-                q = f"updated_at:>\"{since}\""
+                q = f'updated_at:>"{since}"'
                 r = requests.get(
                     base + f"/posts/?filter={q}&fields=title,updated_at,status&limit=100&order=updated_at%20desc",
                     headers=headers,
@@ -93,7 +94,7 @@ class StateStore:
                 if r.status_code >= 400:
                     # Fallback: без server-side фильтра, отберём по времени на клиенте
                     r2 = requests.get(
-                        base + f"/posts/?fields=title,updated_at,status&limit=100&order=updated_at%20desc",
+                        base + "/posts/?fields=title,updated_at,status&limit=100&order=updated_at%20desc",
                         headers=headers,
                         timeout=30,
                     )
@@ -101,7 +102,9 @@ class StateStore:
                         last_err = RuntimeError(f"Ghost HTTP {r.status_code}/{r2.status_code}")
                     else:
                         posts = r2.json().get("posts", [])
-                        titles = [p.get("title", "") for p in posts if (p.get("updated_at") and p.get("updated_at") >= since)]
+                        titles = [
+                            p.get("title", "") for p in posts if (p.get("updated_at") and p.get("updated_at") >= since)
+                        ]
                         logging.info("Ghost recent titles fetched (fallback): %s", len(titles))
                         if titles:
                             return titles
@@ -118,15 +121,55 @@ class StateStore:
         return []
 
     # --- Внутренние утилиты похожести тем ---
-    _STOP: ClassVar[Set[str]] = {
-        "the","and","for","with","from","this","that","open","available","device","local","run",
-        "управление","через","для","как","и","или","по","код","кодом","конфигурации","инфраструктуры",
-        "инфраструктурой","безопасное","предсказуемое","автоматизация","обзор","введение","гайд","урок","курс",
-        "что","это","про","с","на","от","до","по","через","практика","пример","часть"
+    _STOP: ClassVar[set[str]] = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "this",
+        "that",
+        "open",
+        "available",
+        "device",
+        "local",
+        "run",
+        "управление",
+        "через",
+        "для",
+        "как",
+        "и",
+        "или",
+        "по",
+        "код",
+        "кодом",
+        "конфигурации",
+        "инфраструктуры",
+        "инфраструктурой",
+        "безопасное",
+        "предсказуемое",
+        "автоматизация",
+        "обзор",
+        "введение",
+        "гайд",
+        "урок",
+        "курс",
+        "что",
+        "это",
+        "про",
+        "с",
+        "на",
+        "от",
+        "до",
+        "по",
+        "через",
+        "практика",
+        "пример",
+        "часть",
     }
 
     @classmethod
-    def _tokens(cls, text: str) -> Set[str]:
+    def _tokens(cls, text: str) -> set[str]:
         raw = [t for t in re.split(r"[^\w\-/]+", (text or "").lower()) if t]
         tokens = set()
         for t in raw:
@@ -148,7 +191,7 @@ class StateStore:
         return brand_hit or jacc >= 0.5
 
     @classmethod
-    def _is_similar_to_recent(cls, title: str, recent_titles: List[str]) -> bool:
+    def _is_similar_to_recent(cls, title: str, recent_titles: list[str]) -> bool:
         norm = title.strip().lower()
         for t in recent_titles:
             if (t or "").strip().lower() == norm:
@@ -156,4 +199,3 @@ class StateStore:
             if cls._is_similar(title, t or ""):
                 return True
         return False
-

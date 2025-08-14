@@ -1,4 +1,5 @@
 """Пакет DailyDevDigestAi."""
+
 from __future__ import annotations
 
 import os
@@ -16,4 +17,3 @@ if load_dotenv is not None:
         load_dotenv(dotenv_path)
 
 __all__ = []
-

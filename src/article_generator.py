@@ -1,8 +1,8 @@
 """Модуль генерации статьи."""
+
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Tuple
 
 from .config import Config
 from .cta_inserter import CTAProvider
@@ -13,6 +13,7 @@ def _openai_client():
         return None
     try:
         from openai import OpenAI
+
         return OpenAI(api_key=Config.OPENAI_API_KEY)
     except Exception:
         return None
@@ -55,7 +56,7 @@ def _adjust_length_with_model(client, html: str) -> str:
     if 4000 <= length <= 8000:
         return html
     try:
-        target = 6000
+        # целевой размер ~6000, используется только в описании промпта
         prompt = (
             "Отредактируй ниже HTML-статью так, чтобы её длина была в диапазоне 4000–8000 символов (целевой размер ~6000), "
             "сохранив структуру, язык и смысл. Нельзя использовать Markdown, только HTML. Верни только HTML.\n\n"
@@ -63,16 +64,21 @@ def _adjust_length_with_model(client, html: str) -> str:
         )
         resp = client.chat.completions.create(
             model=Config.OPENAI_MODEL,
-            messages=[{"role": "system", "content": "Ты редактор, который аккуратно изменяет длину текста и сохраняет структуру."}, {"role": "user", "content": prompt}],
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Ты редактор, который аккуратно изменяет длину текста и сохраняет структуру.",
+                },
+                {"role": "user", "content": prompt},
+            ],
             temperature=0.4,
         )
-        new_html = resp.choices[0].message.content or html
-        return new_html
+        return resp.choices[0].message.content or html
     except Exception:
         return html
 
 
-def generate_article(topic: str, outline: List[str], tags: List[str]) -> Tuple[str, List[str]]:
+def generate_article(topic: str, outline: list[str], tags: list[str]) -> tuple[str, list[str]]:
     client = _openai_client()
     ctas = CTAProvider()
     pair = ctas.pick_pair()
@@ -118,7 +124,7 @@ def generate_article(topic: str, outline: List[str], tags: List[str]) -> Tuple[s
     return html, tags
 
 
-def _fallback_html(topic: str, outline: List[str]) -> str:
+def _fallback_html(topic: str, outline: list[str]) -> str:
     items = "".join(f"<li>{p}</li>" for p in outline)
     return (
         f"<h2>{topic}</h2>"

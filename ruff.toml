@@ -1,0 +1,33 @@
+target-version = "py310"
+line-length = 120
+
+[lint]
+select = [
+  "F",   # Pyflakes
+  "E", "W",  # pycodestyle
+  "I",       # isort
+  "UP",      # pyupgrade
+  "PL",      # Pylint
+  "PIE",     # flake8-pie
+  "COM",     # flake8-commas
+  "ISC",     # flake8-implicit-str-concat
+  "ICN",     # flake8-import-conventions
+  "Q",       # flake8-quotes
+  "RET",     # flake8-return
+  "SIM",     # flake8-simplify
+  "PERF",    # Perflint
+  "RUF",     # Ruff-specific rules
+]
+ignore = [
+  "E501",    # длина строки — контролируем контекстно
+  "PLC0415", # разрешаем локальные импорты (ленивая загрузка SDK)
+  "PLR2004", # magic numbers ок для эвристик
+  "RUF001", "RUF002", "RUF003", # кириллица в строках/комментариях допустима
+  "PERF203", # try/except в цикле приемлемо для внешних API
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+

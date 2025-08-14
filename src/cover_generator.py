@@ -1,9 +1,9 @@
 """Модуль генерации обложки."""
+
 from __future__ import annotations
 
 import base64
 import io
-from typing import Optional, Tuple
 import logging
 
 from PIL import Image, ImageDraw, ImageFont
@@ -16,12 +16,13 @@ def _openai_client():
         return None
     try:
         from openai import OpenAI
+
         return OpenAI(api_key=Config.OPENAI_API_KEY)
     except Exception:
         return None
 
 
-def _center_crop_to(img: Image.Image, target: Tuple[int, int]) -> Image.Image:
+def _center_crop_to(img: Image.Image, target: tuple[int, int]) -> Image.Image:
     tw, th = target
     w, h = img.size
     # Масштаб по краткой стороне
@@ -58,6 +59,7 @@ def generate_cover_bytes(title: str) -> bytes:
                 if not b64 and getattr(res.data[0], "url", None):
                     # Фолбэк: если вернулся URL
                     import requests  # локальный импорт, чтобы не тянуть лишнее выше
+
                     r = requests.get(res.data[0].url, timeout=60)
                     r.raise_for_status()
                     img_bytes = r.content
@@ -78,7 +80,7 @@ def _generate_base_image() -> Image.Image:
     # Светлый вертикальный градиент (fallback)
     width, height = 1200, 630
     img = Image.new("RGB", (width, height))
-    top = (240, 248, 255)   # почти белый с синим оттенком
+    top = (240, 248, 255)  # почти белый с синим оттенком
     bottom = (210, 225, 255)
     for y in range(height):
         ratio = y / max(1, height - 1)

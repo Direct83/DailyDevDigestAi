@@ -1,14 +1,15 @@
 """Модуль публикации статьи в Ghost (Admin API v5)."""
+
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
-from typing import Dict, List, Optional
-
 import logging
+from email.utils import parsedate_to_datetime
+
 import jwt
 import pytz
 import requests
-from email.utils import parsedate_to_datetime
 
 from .config import Config
 
@@ -48,13 +49,12 @@ class GhostPublisher:
         header = {"alg": "HS256", "typ": "JWT", "kid": kid}
         exp = server_now + 300
         payload = {"iat": iat, "exp": exp, "aud": aud}
-        token = jwt.encode(payload, bytes.fromhex(secret), algorithm="HS256", headers=header)
-        return token
+        return jwt.encode(payload, bytes.fromhex(secret), algorithm="HS256", headers=header)
 
-    def _auth_headers(self) -> Dict[str, str]:
+    def _auth_headers(self) -> dict[str, str]:
         return {"Authorization": f"Ghost {self._make_jwt(Config.GHOST_ADMIN_API_KEY, aud=self._aud)}"}
 
-    def upload_image_bytes(self, image_bytes: bytes, filename: str = "cover.png") -> Optional[str]:
+    def upload_image_bytes(self, image_bytes: bytes, filename: str = "cover.png") -> str | None:
         try:
             files = {"file": (filename, image_bytes, "image/png")}
             r = requests.post(self.base + "/images/upload/", headers=self._auth_headers(), files=files, timeout=60)
@@ -62,13 +62,22 @@ class GhostPublisher:
             data = r.json()
             return data.get("images", [{}])[0].get("url")
         except Exception:
-            try:
-                logging.warning("Ghost upload_image error: status=%s body=%s", getattr(r, "status_code", None), str(getattr(r, "text", ""))[:300])
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                logging.warning(
+                    "Ghost upload_image error: status=%s body=%s",
+                    getattr(r, "status_code", None),
+                    str(getattr(r, "text", ""))[:300],
+                )
             return None
 
-    def publish(self, title: str, html: str, tags: List[str], feature_image_bytes: Optional[bytes], schedule_msk_11: bool = True) -> Dict:
+    def publish(
+        self,
+        title: str,
+        html: str,
+        tags: list[str],
+        feature_image_bytes: bytes | None,
+        schedule_msk_11: bool = True,
+    ) -> dict:
         # Нормализация заголовка под ограничения Ghost (<=255 символов)
         safe_title = (title or "").strip()
         if len(safe_title) > 255:
@@ -90,8 +99,8 @@ class GhostPublisher:
             status = "scheduled"
 
         # Нормализуем теги в список объектов с именем (устойчиво для Admin API v5)
-        uniq_tags: List[str] = list({*(tags or []), "AI Generated"})
-        tag_objects: List[Dict[str, str]] = [{"name": t} for t in uniq_tags if t]
+        uniq_tags: list[str] = list({*(tags or []), "AI Generated"})
+        tag_objects: list[dict[str, str]] = [{"name": t} for t in uniq_tags if t]
 
         payload = {
             "posts": [
@@ -102,8 +111,8 @@ class GhostPublisher:
                     **({"published_at": published_at} if published_at else {}),
                     **({"feature_image": feature_image} if feature_image else {}),
                     "tags": tag_objects,
-                }
-            ]
+                },
+            ],
         }
         r = requests.post(self.base + "/posts/?source=html", headers=self._auth_headers(), json=payload, timeout=60)
         if r.status_code >= 400:

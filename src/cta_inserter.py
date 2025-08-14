@@ -1,11 +1,11 @@
 """Модуль вставки рекламных CTA."""
+
 from __future__ import annotations
 
 import json
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import requests
 
@@ -22,16 +22,16 @@ class CTA:
 
 
 class CTAProvider:
-    def __init__(self, path: Optional[Path] = None) -> None:
+    def __init__(self, path: Path | None = None) -> None:
         self.path = path  # локальный файл больше не обязателен
-        self._ctas: List[CTA] = []
+        self._ctas: list[CTA] = []
         self._load()
 
     def _load(self) -> None:
         # 1) ENV CTAS_JSON
         if Config.CTAS_JSON:
             try:
-                raw: List[Dict] = json.loads(Config.CTAS_JSON)
+                raw: list[dict] = json.loads(Config.CTAS_JSON)
                 self._ctas = [CTA(**x) for x in raw]
                 if self._ctas:
                     self._prioritize()
@@ -73,10 +73,10 @@ class CTAProvider:
 
         self._ctas.sort(key=sort_key)
 
-    def pick_pair(self) -> List[CTA]:
+    def pick_pair(self) -> list[CTA]:
         free = [c for c in self._ctas if c.type.lower() in {"free", "freebie"}]
         course = [c for c in self._ctas if c.type.lower() in {"course", "program"}]
-        result: List[CTA] = []
+        result: list[CTA] = []
         # ограничим выбор верхними 5 по приоритету
         if free:
             result.append(random.choice(free[: min(5, len(free))]))
