@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -196,7 +197,30 @@ def select_topic(state: Optional[StateStore] = None) -> Dict[str, object]:
     # 48 часов окно
     candidates = [c for c in candidates if c.published_at >= cutoff]
 
-    # антидубль 20 дней
+    # Жёсткая проверка на повторы: сперва берём темы из Ghost за 20 дней,
+    # затем выкидываем все кандидаты, которые похожи или содержат те же "якорные" токены (len>=5)
+    recent_titles = state.get_recent_titles()
+    if not recent_titles:
+        logging.error("No recent titles from Ghost — aborting selection to avoid duplicates")
+        raise RuntimeError("Ghost recent titles unavailable; stop to avoid duplicates")
+    from .state import StateStore as _SS
+    def _anchors(text: str) -> set[str]:
+        return {t for t in _SS._tokens(text) if len(t) >= 5}
+    recent_anchor_tokens: set[str] = set()
+    for t in recent_titles:
+        recent_anchor_tokens |= _anchors(t)
+    before_anchor = len(candidates)
+    filtered: List[TopicCandidate] = []
+    for c in candidates:
+        if _SS._is_similar_to_recent(c.title, recent_titles):
+            continue
+        if _anchors(c.title) & recent_anchor_tokens:
+            continue
+        filtered.append(c)
+    candidates = filtered
+
+    # антидубль 20 дней (дополнительная страховка)
+    before_recent = len(candidates)
     candidates = [c for c in candidates if not state.is_recent_topic(c.title)]
 
     # сортировка
