@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 import smtplib
 from datetime import datetime, timedelta, timezone
@@ -23,35 +24,127 @@ from .config import Config
 def _ghost_headers() -> dict[str, str]:
     if not (Config.GHOST_ADMIN_API_URL and Config.GHOST_ADMIN_API_KEY):
         return {}
+    from email.utils import parsedate_to_datetime
+
     import jwt
 
+    base = Config.GHOST_ADMIN_API_URL.rstrip("/") + "/ghost/api/admin"
+    # Выравниваем iat/exp по серверному времени Ghost
+    try:
+        r = requests.get(base + "/site/", timeout=10)
+        date_hdr = r.headers.get("Date")
+        if date_hdr:
+            dt_ = parsedate_to_datetime(date_hdr)
+            if dt_ and dt_.tzinfo is not None:
+                server_epoch = int(dt_.timestamp())
+            else:
+                server_epoch = int(datetime.utcnow().timestamp())
+        else:
+            server_epoch = int(datetime.utcnow().timestamp())
+    except Exception:
+        server_epoch = int(datetime.utcnow().timestamp())
+
     kid, secret = Config.GHOST_ADMIN_API_KEY.split(":", 1)
-    iat = int(datetime.utcnow().timestamp())
     header = {"alg": "HS256", "typ": "JWT", "kid": kid}
-    payload = {"iat": iat, "exp": iat + 5 * 60, "aud": "/v5/admin/"}
+    payload = {"iat": server_epoch, "exp": server_epoch + 5 * 60, "aud": "/v5/admin/"}
     token = jwt.encode(payload, bytes.fromhex(secret), algorithm="HS256", headers=header)
     return {"Authorization": f"Ghost {token}"}
 
 
 def _ghost_posts_summary(days: int = 7) -> dict[str, object]:
+    """Возвращает отдельные списки опубликованных за N дней, запланированных и черновиков.
+
+    Структура:
+    {
+        "count_published": int,
+        "count_scheduled": int,
+        "count_draft": int,
+        "published": [(title, iso_datetime)],
+        "scheduled": [(title, iso_datetime)],
+        "drafts": [(title, iso_datetime_updated)],
+        "slugs": [slug, ...],  # только для опубликованных (для GA)
+    }
+    """
     if not Config.GHOST_ADMIN_API_URL:
-        return {"count": 0, "titles": []}
+        return {
+            "count_published": 0,
+            "count_scheduled": 0,
+            "count_draft": 0,
+            "published": [],
+            "scheduled": [],
+            "drafts": [],
+            "slugs": [],
+        }
     base = Config.GHOST_ADMIN_API_URL.rstrip("/") + "/ghost/api/admin"
     headers = _ghost_headers()
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    since_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    # Ghost NQL дружелюбнее к формату "YYYY-MM-DD HH:MM:SS" без микросекунд/таймзоны
+    since = since_dt.strftime("%Y-%m-%d %H:%M:%S")
+    logging.info("Ghost summary: base=%s since(utc)=%s", base, since)
     try:
-        r = requests.get(
-            base + f'/posts/?filter=published_at:>"{since}"&fields=title,slug,published_at&limit=50',
-            headers=headers,
-            timeout=60,
-        )
-        r.raise_for_status()
-        data = r.json().get("posts", [])
-        titles = [p.get("title") for p in data]
-        slugs = [p.get("slug") for p in data]
-        return {"count": len(data), "titles": titles, "slugs": slugs}
-    except Exception:
-        return {"count": 0, "titles": [], "slugs": []}
+        # Опубликованные за период
+        pub_params = {
+            "filter": f"status:published+published_at:>'{since}'",
+            "order": "published_at desc",
+            "fields": "title,slug,published_at,status",
+            "limit": "100",
+        }
+        r_pub = requests.get(base + "/posts/", headers=headers, params=pub_params, timeout=60)
+        logging.info("GET %s", r_pub.url)
+        r_pub.raise_for_status()
+        data_pub = r_pub.json().get("posts", [])
+        logging.info("Published: status=%s count=%d", r_pub.status_code, len(data_pub))
+        published = [(p.get("title"), p.get("published_at")) for p in data_pub if p.get("status") == "published"]
+        slugs = [p.get("slug") for p in data_pub]
+
+        # Запланированные
+        sch_params = {
+            "filter": "status:scheduled",
+            "order": "published_at asc",
+            "fields": "title,published_at,status",
+            "limit": "100",
+        }
+        r_sch = requests.get(base + "/posts/", headers=headers, params=sch_params, timeout=60)
+        logging.info("GET %s", r_sch.url)
+        r_sch.raise_for_status()
+        data_sch = r_sch.json().get("posts", [])
+        logging.info("Scheduled: status=%s count=%d", r_sch.status_code, len(data_sch))
+        scheduled = [(p.get("title"), p.get("published_at")) for p in data_sch if p.get("status") == "scheduled"]
+
+        # Черновики (последние обновлённые)
+        draft_params = {
+            "filter": "status:draft",
+            "order": "updated_at desc",
+            "fields": "title,updated_at,status",
+            "limit": "100",
+        }
+        r_draft = requests.get(base + "/posts/", headers=headers, params=draft_params, timeout=60)
+        logging.info("GET %s", r_draft.url)
+        r_draft.raise_for_status()
+        data_draft = r_draft.json().get("posts", [])
+        logging.info("Drafts: status=%s count=%d", r_draft.status_code, len(data_draft))
+        drafts = [(p.get("title"), p.get("updated_at")) for p in data_draft if p.get("status") == "draft"]
+
+        return {
+            "count_published": len(published),
+            "count_scheduled": len(scheduled),
+            "count_draft": len(drafts),
+            "published": published,
+            "scheduled": scheduled,
+            "drafts": drafts,
+            "slugs": slugs,
+        }
+    except Exception as e:
+        logging.error("Ghost summary error: %s", e)
+        return {
+            "count_published": 0,
+            "count_scheduled": 0,
+            "count_draft": 0,
+            "published": [],
+            "scheduled": [],
+            "drafts": [],
+            "slugs": [],
+        }
 
 
 def _ga4_summary(slugs: list[str]) -> tuple[int, list[tuple[str, int]]]:
@@ -157,20 +250,76 @@ def _render_pdf(
         c.setFont(font_name, 12)
     else:
         c.setFont("Helvetica", 12)
+    # Вспомогательная обёртка по ширине страницы
+    margin_left = 40
+    margin_right = 40
+    max_text_width = width - margin_left - margin_right
+
+    def wrap_lines(text: str, size: int = 12) -> list[str]:
+        words = (text or "").split()
+        if not words:
+            return [""]
+        lines: list[str] = []
+        current: list[str] = []
+        while words:
+            word = words.pop(0)
+            test = (" ".join([*current, word])).strip()
+            w = pdfmetrics.stringWidth(test, font_name or "Helvetica", size)
+            if w <= max_text_width or not current:
+                current.append(word)
+            else:
+                lines.append(" ".join(current))
+                current = [word]
+        if current:
+            lines.append(" ".join(current))
+        return lines
+
+    def draw_bullet_line(text: str, y_pos: float, prefix: str = "— ") -> float:
+        # выводит текст с переносами; возвращает новую координату y
+        wrapped = wrap_lines(prefix + text, 12)
+        for idx, line in enumerate(wrapped):
+            c.drawString(margin_left + (0 if idx == 0 else 16), y_pos, line if idx == 0 else line.strip())
+            y_pos -= 16
+            if y_pos < 60:
+                c.showPage()
+                if font_name:
+                    c.setFont(font_name, 12)
+                else:
+                    c.setFont("Helvetica", 12)
+                y_pos = height - 60
+        return y_pos
+
     c.drawString(40, height - 70, "Период: последние 7 дней")
-    c.drawString(40, height - 90, f"Количество публикаций: {summary.get('count', 0)}")
+    c.drawString(
+        40,
+        height - 90,
+        f"Опубликовано (7д): {summary.get('count_published', 0)} — Запланировано: {summary.get('count_scheduled', 0)} — Черновики: {summary.get('count_draft', 0)}",
+    )
     if ga_total:
         c.drawString(40, height - 110, f"GA4 — суммарные просмотры: {ga_total}")
     if ctr is not None:
         c.drawString(40, height - 130, f"CTR (to.click): {ctr * 100:.1f}%")
-    c.drawString(40, height - 160, "Заголовки:")
+    # Заголовки — опубликованные
+    c.drawString(40, height - 160, "Опубликовано:")
     y = height - 180
-    for title in summary.get("titles", [])[:25]:
-        c.drawString(50, y, f"— {title}")
-        y -= 18
-        if y < 60:
-            c.showPage()
-            y = height - 60
+    published: list[tuple[str, str]] = summary.get("published", [])  # type: ignore
+    if not published:
+        y = draw_bullet_line("ещё не публиковали", y)
+    else:
+        for title, dt_iso in published[:25]:
+            suffix = f" ({dt_iso[:10]})" if dt_iso else ""
+            y = draw_bullet_line(f"{title}{suffix}", y)
+
+    # Заголовки — запланировано
+    c.drawString(40, y - 10, "Запланировано:")
+    y -= 30
+    scheduled: list[tuple[str, str]] = summary.get("scheduled", [])  # type: ignore
+    if not scheduled:
+        y = draw_bullet_line("нет запланированных", y)
+    else:
+        for title, dt_iso in scheduled[:25]:
+            suffix = f" ({dt_iso[:16].replace('T', ' ')})" if dt_iso else ""
+            y = draw_bullet_line(f"{title}{suffix}", y)
     if ga_top:
         c.showPage()
         if font_name:
@@ -184,11 +333,17 @@ def _render_pdf(
             c.setFont("Helvetica", 12)
         y = height - 70
         for path, views in ga_top:
-            c.drawString(50, y, f"{views:>6} — {path}")
-            y -= 18
-            if y < 60:
-                c.showPage()
-                y = height - 60
+            y = draw_bullet_line(f"{views:>6} — {path}", y)
+    # Черновики
+    c.drawString(40, y - 10, "Черновики:")
+    y -= 30
+    drafts: list[tuple[str, str]] = summary.get("drafts", [])  # type: ignore
+    if not drafts:
+        y = draw_bullet_line("нет черновиков", y)
+    else:
+        for title, dt_iso in drafts[:25]:
+            suffix = f" (upd {dt_iso[:16].replace('T', ' ')})" if dt_iso else ""
+            y = draw_bullet_line(f"{title}{suffix}", y)
     c.showPage()
     c.save()
     return buf.getvalue()
