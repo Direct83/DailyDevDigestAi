@@ -35,16 +35,18 @@ class StateStore:
         since = (datetime.now(timezone.utc) - timedelta(days=self.history_days)).isoformat()
         headers = _ghost_headers()
         try:
-            q = f"title:'{title.replace("'", "\\'")}' + published_at:>\"{since}\""
+            # Ищем по updated_at за 20 дней во всех статусах, затем сравниваем заголовки без регистра
+            q = f"updated_at:>\"{since}\""
             r = requests.get(
-                base + f"/posts/?filter={q}&fields=title,published_at&limit=1",
+                base + f"/posts/?filter={q}&fields=title,updated_at,status&limit=50&order=updated_at%20desc",
                 headers=headers,
                 timeout=30,
             )
             if r.status_code >= 400:
                 return False
             posts = r.json().get("posts", [])
-            return any(p.get("title", "").strip().lower() == title.strip().lower() for p in posts)
+            normalized = title.strip().lower()
+            return any((p.get("title", "").strip().lower() == normalized) for p in posts)
         except Exception:
             return False
 

@@ -13,12 +13,41 @@ def _openai_client():
         return None
     try:
         from openai import OpenAI
-
-        if Config.OPENAI_BASE_URL:
-            return OpenAI(api_key=Config.OPENAI_API_KEY, base_url=Config.OPENAI_BASE_URL)
         return OpenAI(api_key=Config.OPENAI_API_KEY)
     except Exception:
         return None
+
+
+def generate_russian_title(topic: str) -> str:
+    """Генерирует краткий русский заголовок на основе темы.
+
+    Требования: 60–90 символов, без кавычек, без эмодзи.
+    При отсутствии клиента — возвращает исходную тему, подрезанную до 100 символов.
+    """
+    client = _openai_client()
+    base = (topic or "").strip()
+    if not client:
+        return (base[:100]).rstrip()
+    try:
+        prompt = (
+            "Сформулируй один короткий заголовок на РУССКОМ по теме ниже. "
+            "60–90 символов. Без кавычек и эмодзи. Верни только заголовок.\n\n" + base
+        )
+        resp = client.chat.completions.create(
+            model=Config.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Ты редактор заголовков техноблога."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.5,
+        )
+        title = (resp.choices[0].message.content or base).strip()
+        # защита от слишком длинного
+        if len(title) > 100:
+            title = title[:100].rstrip(" -:,.!")
+        return title
+    except Exception:
+        return (base[:100]).rstrip()
 
 
 def _adjust_length_with_model(client, html: str) -> str:

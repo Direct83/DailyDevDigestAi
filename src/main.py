@@ -6,7 +6,7 @@ import logging
 import typer
 
 from .analytics_reporter import send_weekly_report
-from .article_generator import generate_article
+from .article_generator import generate_article, generate_russian_title
 from .config import Config
 from .cover_generator import generate_cover_bytes
 from .publisher import GhostPublisher
@@ -32,7 +32,9 @@ def run_once() -> None:
     state = StateStore()
 
     sel = select_topic(state)
-    title: str = str(sel["title"])  # type: ignore
+    raw_title: str = str(sel["title"])  # type: ignore
+    # Русифицированный, более короткий заголовок
+    title: str = generate_russian_title(raw_title)
     tags = list(sel.get("tags", []))  # type: ignore
     outline = list(sel.get("outline", []))  # type: ignore
 
@@ -63,8 +65,8 @@ def run_once() -> None:
             posts = (res or {}).get("posts", [])
             p = posts[0] if posts else {}
             logging.info(
-                "Опубликовано/запланировано: id=%s title=%s status=%s url=%s",
-                p.get("id"), p.get("title"), p.get("status"), (res or {}).get("url"),
+                "Опубликовано/запланировано: id=%s title=%s status=%s feature_image=%s",
+                p.get("id"), p.get("title"), p.get("status"), p.get("feature_image"),
             )
         except Exception:
             logging.info("Опубликовано/запланировано")

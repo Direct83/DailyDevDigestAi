@@ -25,9 +25,7 @@ class Config:
     # OpenAI
     OPENAI_API_KEY: str | None = get_env("OPENAI_API_KEY")
     OPENAI_MODEL: str = get_env("OPENAI_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
-    OPENAI_IMAGE_MODEL: str = get_env("OPENAI_IMAGE_MODEL", "gpt-image-1") or "gpt-image-1"
-    # Альтернативная точка доступа OpenAI-совместимых провайдеров (например, BotHub)
-    OPENAI_BASE_URL: str | None = get_env("OPENAI_BASE_URL")
+    OPENAI_IMAGE_MODEL: str = get_env("OPENAI_IMAGE_MODEL", "dall-e-3") or "dall-e-3"
 
     # Ghost Admin
     GHOST_ADMIN_API_URL: str | None = get_env("GHOST_ADMIN_API_URL")
