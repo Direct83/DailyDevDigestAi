@@ -69,6 +69,11 @@ class GhostPublisher:
             return None
 
     def publish(self, title: str, html: str, tags: List[str], feature_image_bytes: Optional[bytes], schedule_msk_11: bool = True) -> Dict:
+        # Нормализация заголовка под ограничения Ghost (<=255 символов)
+        safe_title = (title or "").strip()
+        if len(safe_title) > 255:
+            safe_title = safe_title[:252].rstrip() + "..."
+
         feature_image = None
         if feature_image_bytes:
             feature_image = self.upload_image_bytes(feature_image_bytes)
@@ -84,18 +89,27 @@ class GhostPublisher:
             published_at = scheduled.astimezone(pytz.utc).isoformat()
             status = "scheduled"
 
+        # Нормализуем теги в список объектов с именем (устойчиво для Admin API v5)
+        uniq_tags: List[str] = list({*(tags or []), "AI Generated"})
+        tag_objects: List[Dict[str, str]] = [{"name": t} for t in uniq_tags if t]
+
         payload = {
             "posts": [
                 {
-                    "title": title,
+                    "title": safe_title,
                     "html": html,
                     "status": status,
                     **({"published_at": published_at} if published_at else {}),
                     **({"feature_image": feature_image} if feature_image else {}),
-                    "tags": list({*(tags or []), "AI Generated"}),
+                    "tags": tag_objects,
                 }
             ]
         }
         r = requests.post(self.base + "/posts/?source=html", headers=self._auth_headers(), json=payload, timeout=60)
-        r.raise_for_status()
+        if r.status_code >= 400:
+            # Постараемся отдать полезную диагностику (валидация 422 и т.п.)
+            try:
+                logging.warning("Ghost publish error: status=%s body=%s", r.status_code, str(r.text)[:500])
+            finally:
+                r.raise_for_status()
         return r.json()
