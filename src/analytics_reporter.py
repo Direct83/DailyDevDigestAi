@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import io
+import os
 import smtplib
 from datetime import datetime, timedelta, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 
 import requests
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from .config import Config
@@ -111,12 +115,48 @@ def _render_pdf(
     ga_top: list[tuple[str, int]],
     ctr: float | None,
 ) -> bytes:
+    def _register_cyrillic_font() -> str | None:
+        # 1) Явный путь из ENV
+        candidates: list[str] = []
+        env_path = os.getenv("REPORT_FONT_PATH")
+        if env_path:
+            candidates.append(env_path)
+        # 2) Локальный бандл (если добавят в проект)
+        candidates.append(str(Path(__file__).resolve().parent.parent / "assets" / "fonts" / "DejaVuSans.ttf"))
+        # 3) Системные пути (Windows/Linux)
+        candidates.extend(
+            [
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/ARIAL.TTF",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            ],
+        )
+        for idx, p in enumerate(candidates):
+            try:
+                if p and Path(p).exists():
+                    name = f"AppFont{idx}"
+                    pdfmetrics.registerFont(TTFont(name, p))
+                    return name
+            except Exception:
+                continue
+        return None
+
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
-    c.setFont("Helvetica-Bold", 16)
+    font_name = _register_cyrillic_font()
+    # Заголовок
+    if font_name:
+        c.setFont(font_name, 16)
+    else:
+        c.setFont("Helvetica-Bold", 16)
     c.drawString(40, height - 40, "Еженедельная сводка блога")
-    c.setFont("Helvetica", 12)
+    # Основной текст
+    if font_name:
+        c.setFont(font_name, 12)
+    else:
+        c.setFont("Helvetica", 12)
     c.drawString(40, height - 70, "Период: последние 7 дней")
     c.drawString(40, height - 90, f"Количество публикаций: {summary.get('count', 0)}")
     if ga_total:
@@ -133,9 +173,15 @@ def _render_pdf(
             y = height - 60
     if ga_top:
         c.showPage()
-        c.setFont("Helvetica-Bold", 14)
+        if font_name:
+            c.setFont(font_name, 14)
+        else:
+            c.setFont("Helvetica-Bold", 14)
         c.drawString(40, height - 40, "ТОП страниц (GA4)")
-        c.setFont("Helvetica", 12)
+        if font_name:
+            c.setFont(font_name, 12)
+        else:
+            c.setFont("Helvetica", 12)
         y = height - 70
         for path, views in ga_top:
             c.drawString(50, y, f"{views:>6} — {path}")
