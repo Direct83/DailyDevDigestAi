@@ -19,7 +19,7 @@ cp env.example .env
 - GHOST_ADMIN_API_URL и GHOST_ADMIN_API_KEY — публикация в Ghost
 - GOOGLE_API_KEY и GOOGLE_CSE_ID — фактчекинг (поиск)
 - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, REPORT_EMAIL_TO — еженедельный отчёт
-Опционально: GA4_PROPERTY_ID, GA4_JSON_KEY_PATH, TOCLICK_API_KEY, CTAS_JSON, TELEGRAM_RSS_FEEDS, YANDEX_SUGGEST_SEEDS.
+Опционально: GA4_PROPERTY_ID, GA4_JSON_KEY_PATH, TOCLICK_API_KEY, CTAS_JSON, TELEGRAM_RSS_FEEDS.
 
 3) Первый запуск
 ```bash
@@ -88,7 +88,7 @@ pre-commit install
 
 - **Язык и CLI**: Python 3.10+, Typer
 - **Сетевые вызовы и парсинг**: requests, BeautifulSoup4, feedparser
-- **Источники тем**: Hacker News (REST), Reddit (RSS/JSON), Google Trends (pytrends), GitHub Trending (HTML‑парсинг), Telegram RSS (опц.), Yandex Suggest (опц.)
+- **Источники тем**: Hacker News (REST), Reddit (RSS/JSON), Google Trends (pytrends), GitHub Trending (HTML‑парсинг), Telegram RSS (опц.)
 - **Генерация контента и обложек**: OpenAI Python SDK (Chat Completions, Images DALL‑E 3), Pillow
 - **Фактчекинг**: AST‑проверка Python, Piston API (песочница сниппетов) / Replit API (опц.), Google Custom Search API
 - **Публикация**: Ghost Admin API, PyJWT (JWT для Ghost, выравнивание времени по заголовку Date)

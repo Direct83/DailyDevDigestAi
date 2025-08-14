@@ -157,35 +157,6 @@ def fetch_telegram_rss() -> list[TopicCandidate]:
     return result
 
 
-def fetch_yandex_suggest() -> list[TopicCandidate]:
-    seeds = (Config.YANDEX_SUGGEST_SEEDS or "").split(",")
-    seeds = [s.strip() for s in seeds if s.strip()]
-    if not seeds:
-        return []
-    result: list[TopicCandidate] = []
-    now = datetime.now(timezone.utc)
-    for seed in seeds[:10]:
-        try:
-            # Яндекс подсказки (v2) — неофициальная точка, может меняться; используем как приблизитель Wordstat
-            r = requests.get(
-                "https://suggest.yandex.ru/suggest-ff.cgi",
-                params={"part": seed, "uil": "ru", "v": "2", "ip": "0.0.0.0"},
-                timeout=10,
-            )
-            data = r.json()
-            # Ожидаем формат: ["seed", ["подсказка1", "подсказка2", ...]]
-            items = data[1] if isinstance(data, list) and len(data) > 1 else []
-            for q in items[:10]:
-                title = str(q)
-                if any(k.lower() in title.lower() for k in KEYWORDS) or any(
-                    w in title.lower() for w in ["как ", "how to", "пример", "обучить", "настроить"]
-                ):
-                    result.append(TopicCandidate(title=title, source="YandexSuggest", score=1.0, published_at=now))
-        except Exception:
-            continue
-    return result
-
-
 def select_topic(state: StateStore | None = None) -> dict[str, object]:
     state = state or StateStore()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
@@ -196,7 +167,6 @@ def select_topic(state: StateStore | None = None) -> dict[str, object]:
     candidates.extend(fetch_google_trends())
     candidates.extend(fetch_github_trending())
     candidates.extend(fetch_telegram_rss())
-    candidates.extend(fetch_yandex_suggest())
 
     # 48 часов окно
     candidates = [c for c in candidates if c.published_at >= cutoff]

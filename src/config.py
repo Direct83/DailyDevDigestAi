@@ -69,9 +69,6 @@ class Config:
     # Telegram RSS (через любые публичные RSS-прокси на каналы)
     TELEGRAM_RSS_FEEDS: str | None = get_env("TELEGRAM_RSS_FEEDS")  # comma-separated URLs
 
-    # Яндекс подсказки (approx Wordstat) — список seed-запросов через запятую
-    YANDEX_SUGGEST_SEEDS: str | None = get_env("YANDEX_SUGGEST_SEEDS")  # e.g. "как, python, нейросети"
-
     # Песочница исполнения кода: replit | piston (по умолчанию piston)
     SANDBOX_PROVIDER: str = (get_env("SANDBOX_PROVIDER", "piston") or "piston").lower()
     REPLIT_EVAL_URL: str | None = get_env("REPLIT_EVAL_URL")  # например, https://eval.api.replit.com/eval
