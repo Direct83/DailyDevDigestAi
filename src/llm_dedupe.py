@@ -23,15 +23,22 @@ def _openai_client():
         return None
 
 
-def llm_is_duplicate(candidate_title: str, recent_titles: Iterable[str], *, model: str | None = None) -> bool:
+def llm_is_duplicate(
+    candidate_title: str,
+    recent_titles: Iterable[str],
+    *,
+    model: str | None = None,
+) -> bool | None:
     """Проверяет, является ли `candidate_title` по смыслу дубликатом одного из `recent_titles`.
 
-    Возвращает True, если LLM считает, что совпадает по смыслу (дубликат), иначе False.
-    Если LLM недоступен, всегда возвращает False (фолбэк — верхний уровень решает, что делать).
+    Возвращает:
+    - True — явный дубликат по мнению LLM
+    - False — не дубликат по мнению LLM
+    - None — LLM недоступен/ошибка (верхний уровень решает, что делать)
     """
     client = _openai_client()
     if not client:
-        return False
+        return None
 
     titles = [t.strip() for t in recent_titles if t and t.strip()]
     if not titles:
@@ -61,6 +68,10 @@ def llm_is_duplicate(candidate_title: str, recent_titles: Iterable[str], *, mode
             max_tokens=2,
         )
         answer = (resp.choices[0].message.content or "").strip().lower()
-        return answer.startswith("y")  # YES
+        if answer.startswith("y"):
+            return True
+        if answer.startswith("n"):
+            return False
+        return None
     except Exception:
-        return False
+        return None

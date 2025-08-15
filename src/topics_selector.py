@@ -10,6 +10,7 @@ import feedparser
 import requests
 
 from .config import Config
+from .domain.dedup import quick_duplicate_heuristic
 from .llm_dedupe import llm_is_duplicate
 from .state import StateStore
 
@@ -181,12 +182,12 @@ def select_topic(state: StateStore | None = None) -> dict[str, object]:
     recent_titles = state.get_recent_titles()
     filtered: list[TopicCandidate] = []
     for c in candidates:
-        try:
-            if llm_is_duplicate(c.title, recent_titles):
-                continue
-        except Exception:
-            # при недоступности LLM в этом месте не блокируем
-            pass
+        decision = llm_is_duplicate(c.title, recent_titles)
+        if decision is True:
+            continue
+        if decision is None and quick_duplicate_heuristic(c.title, recent_titles):
+            # LLM недоступен — применим ручную эвристику: ≥7 слов и 1 длинное слово совпало
+            continue
         filtered.append(c)
     candidates = filtered
 

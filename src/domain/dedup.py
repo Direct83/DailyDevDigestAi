@@ -64,6 +64,25 @@ def is_similar(a: str, b: str) -> bool:
     return brand_hit or jacc >= 0.5
 
 
+def quick_duplicate_heuristic(candidate: str, recent_titles: Iterable[str]) -> bool:
+    """Быстрая ручная эвристика дублей на случай недоступности LLM.
+
+    Правило: если у кандидата ≥ 7 слов и хотя бы одно слово длиной ≥ 7 символов
+    встречается в любом из недавних заголовков, считаем дубликатом.
+    """
+    cand_tokens = [t for t in candidate.split() if t]
+    if len(cand_tokens) < 7:
+        return False
+    long_words = {t.lower() for t in cand_tokens if len(t) >= 7}
+    if not long_words:
+        return False
+    for title in recent_titles:
+        lower = (title or "").lower()
+        if any(w in lower for w in long_words):
+            return True
+    return False
+
+
 def is_similar_to_recent(title: str, recent_titles: Iterable[str]) -> bool:
     """Проверяет заголовок на дубли с недавними заголовками."""
     norm = (title or "").strip().lower()
