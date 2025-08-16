@@ -103,44 +103,6 @@ def fetch_google_trends() -> list[TopicCandidate]:
         return []
 
 
-def fetch_github_trending() -> list[TopicCandidate]:
-    """Скрейп GitHub Trending за сегодня.
-
-    Используем HTML-страницу Trending, выбираем репозитории с релевантными ключевыми словами в названии/описании.
-    """
-    url = "https://github.com/trending?since=daily"
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; DDD-AI/1.0)"}
-    try:
-        from bs4 import BeautifulSoup
-
-        r = requests.get(url, headers=headers, timeout=20)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-        items = soup.select("article.Box-row")
-        now = datetime.now(timezone.utc)
-        result: list[TopicCandidate] = []
-        for it in items[:25]:
-            full_name_el = it.select_one("h2 a")
-            desc_el = it.select_one("p")
-            if not full_name_el:
-                continue
-            name = " ".join(full_name_el.get_text(strip=True).split())  # "owner / repo"
-            desc = desc_el.get_text(strip=True) if desc_el else ""
-            title = f"{name}: {desc}" if desc else name
-            if any(k.lower() in title.lower() for k in KEYWORDS):
-                # эвристический скор
-                stars_el = it.select_one("a.Link--muted[href$='/stargazers']")
-                try:
-                    stars_text = stars_el.get_text(strip=True).replace(",", "") if stars_el else "0"
-                    score = float(stars_text) if stars_text.isdigit() else 1.0
-                except Exception:
-                    score = 1.0
-                result.append(TopicCandidate(title=title, source="GitHub", score=score, published_at=now))
-        return result
-    except Exception:
-        return []
-
-
 def fetch_telegram_rss() -> list[TopicCandidate]:
     """Возвращает кандидатов из пользовательских RSS (например, Telegram‑прокси)."""
     feeds = (Config.TELEGRAM_RSS_FEEDS or "").split(",")
@@ -172,7 +134,6 @@ def select_topic(state: StateStore | None = None) -> dict[str, object]:
     candidates.extend(fetch_hn())
     candidates.extend(fetch_reddit())
     candidates.extend(fetch_google_trends())
-    candidates.extend(fetch_github_trending())
     candidates.extend(fetch_telegram_rss())
 
     # 48 часов окно

@@ -74,7 +74,7 @@ pre-commit install
 
 - Потоки данных:
   - Триггеры: планировщик ОС вызывает `src/main.py` (`run-once` или `daily` в 07:00, `weekly` в 19:00 вс)
-  - Входные данные: публичные фиды (HN/Reddit/Trends/GitHub), переменные окружения `.env`
+  - Входные данные: публичные фиды (Hacker News / Reddit / Google Trends / Telegram RSS), переменные окружения `.env`
   - Процесс (граф/стейт‑машина): SelectTopic → GenerateArticle → FactCheck (1 пересборка при провале) → GenerateCover → InsertCTA → Publish@11:00 МСК (или сразу) → краткий лог
   - Отчёт: сбор данных (Ghost/GA4/to.click) → PDF → email
 
@@ -92,8 +92,8 @@ pre-commit install
 
 - **Язык и CLI**: Python 3.10+, Typer
 - **Сетевые вызовы и парсинг**: requests, BeautifulSoup4, feedparser
-- **Источники тем**: Hacker News (REST), Reddit (RSS/JSON), Google Trends (pytrends), GitHub Trending (HTML‑парсинг), Telegram RSS (опц.)
-- **Генерация контента и обложек**: OpenAI Python SDK (Chat Completions, Images DALL‑E 3), Pillow
+- **Источники тем**: Hacker News (REST), Reddit (RSS/JSON), Google Trends (pytrends), Telegram RSS (опц.)
+- **Генерация контента и обложек**: OpenAI Python SDK (Chat Completions; Images: DALL‑E 3 по умолчанию, gpt-image-1 при наличии доступа), Pillow
 - **Фактчекинг**: AST‑проверка Python, Piston API (песочница сниппетов) / Replit API (опц.), Google Custom Search API
 - **Публикация**: Ghost Admin API, PyJWT (JWT для Ghost, выравнивание времени по заголовку Date)
 - **Аналитика**: Google Analytics 4 (google-analytics-data), Ghost Admin API (метаданные постов), to.click (CTR)
@@ -101,4 +101,4 @@ pre-commit install
 - **Конфигурация и время**: python-dotenv, pytz
 - **Качество кода**: Ruff (линт/форматирование) + pre-commit
 - **Планирование**: планировщик ОС (Windows Task Scheduler/cron)
- - **Архитектура**: стейт‑машина (graph) — `src/agent/graph.py`
+- **Архитектура**: стейт‑машина (graph) — `src/agent/graph.py`

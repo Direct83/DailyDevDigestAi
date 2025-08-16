@@ -34,14 +34,16 @@ def generate_russian_title(topic: str) -> str:
             "Сформулируй один короткий заголовок на РУССКОМ по теме ниже. "
             "60–90 символов. Без кавычек и эмодзи. Верни только заголовок.\n\n" + base
         )
-        resp = client.chat.completions.create(
-            model=Config.OPENAI_MODEL,
-            messages=[
+        kwargs = {
+            "model": Config.OPENAI_MODEL,
+            "messages": [
                 {"role": "system", "content": "Ты редактор заголовков техноблога."},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.5,
-        )
+        }
+        if ("gpt-5" not in Config.OPENAI_MODEL) and ("thinking" not in Config.OPENAI_MODEL):
+            kwargs["temperature"] = 0.5
+        resp = client.chat.completions.create(**kwargs)
         title = (resp.choices[0].message.content or base).strip()
         # защита от слишком длинного
         if len(title) > 100:
@@ -66,17 +68,19 @@ def _adjust_length_with_model(client, html: str) -> str:
             "сохранив структуру, язык и смысл. Нельзя использовать Markdown, только HTML. Верни только HTML.\n\n"
             f"---\n{html}\n---"
         )
-        resp = client.chat.completions.create(
-            model=Config.OPENAI_MODEL,
-            messages=[
+        kwargs = {
+            "model": Config.OPENAI_MODEL,
+            "messages": [
                 {
                     "role": "system",
                     "content": "Ты редактор, который аккуратно изменяет длину текста и сохраняет структуру.",
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.4,
-        )
+        }
+        if ("gpt-5" not in Config.OPENAI_MODEL) and ("thinking" not in Config.OPENAI_MODEL):
+            kwargs["temperature"] = 0.4
+        resp = client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content or html
     except Exception:
         return html
@@ -104,11 +108,13 @@ def generate_article(topic: str, outline: list[str], tags: list[str]) -> tuple[s
             f"Вставь места для CTA в двух местах как комментарии <!--CTA_SLOT-->."
         )
         try:
-            resp = client.chat.completions.create(
-                model=Config.OPENAI_MODEL,
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-                temperature=0.7,
-            )
+            kwargs = {
+                "model": Config.OPENAI_MODEL,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            }
+            if ("gpt-5" not in Config.OPENAI_MODEL) and ("thinking" not in Config.OPENAI_MODEL):
+                kwargs["temperature"] = 0.7
+            resp = client.chat.completions.create(**kwargs)
             html = resp.choices[0].message.content or ""
             # Коррекция длины при необходимости
             html = _adjust_length_with_model(client, html)

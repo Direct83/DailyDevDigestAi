@@ -40,8 +40,8 @@ def _df_int(name: str, default: int):
 class Config:
     # OpenAI
     OPENAI_API_KEY: str | None = get_env("OPENAI_API_KEY")
-    OPENAI_MODEL: str = get_env("OPENAI_MODEL", "gpt-4o") or "gpt-4o"
-    OPENAI_IMAGE_MODEL: str = get_env("OPENAI_IMAGE_MODEL", "dall-e-3") or "dall-e-3"
+    OPENAI_MODEL: str = get_env("OPENAI_MODEL", "gpt-5")
+    OPENAI_IMAGE_MODEL: str = get_env("OPENAI_IMAGE_MODEL", "dall-e-3")
 
     # Ghost Admin API
     GHOST_ADMIN_API_URL: str | None = get_env("GHOST_ADMIN_API_URL")
@@ -61,7 +61,7 @@ class Config:
 
     # to.click (CTR на CTA)
     TOCLICK_API_KEY: str | None = get_env("TOCLICK_API_KEY")
-    TOCLICK_BASE_URL: str = get_env("TOCLICK_BASE_URL", "https://to.click/api") or "https://to.click/api"
+    TOCLICK_BASE_URL: str = get_env("TOCLICK_BASE_URL", "https://to.click/api")
 
     # CTA (JSON-массив), пример см. env.example
     CTAS_JSON: str | None = get_env("CTAS_JSON")
@@ -70,19 +70,19 @@ class Config:
     TELEGRAM_RSS_FEEDS: str | None = get_env("TELEGRAM_RSS_FEEDS")
 
     # Песочница кода: piston (по умолчанию) или replit
-    SANDBOX_PROVIDER: str = (get_env("SANDBOX_PROVIDER", "piston") or "piston").lower()
+    SANDBOX_PROVIDER: str = get_env("SANDBOX_PROVIDER", "piston").lower()
     REPLIT_EVAL_URL: str | None = get_env("REPLIT_EVAL_URL")
     REPLIT_EVAL_TOKEN: str | None = get_env("REPLIT_EVAL_TOKEN")
 
     # SMTP (для отправки отчётов)
     SMTP_HOST: str | None = get_env("SMTP_HOST")
-    SMTP_PORT: int = int(get_env("SMTP_PORT", "587") or "587")
+    SMTP_PORT: int = int(get_env("SMTP_PORT", "587"))
     SMTP_USER: str | None = get_env("SMTP_USER")
     SMTP_PASSWORD: str | None = get_env("SMTP_PASSWORD")
     REPORT_EMAIL_TO: str | None = get_env("REPORT_EMAIL_TO")
 
     # Прочее
-    APP_TIMEZONE: str = get_env("APP_TIMEZONE", "Europe/Moscow") or "Europe/Moscow"
+    APP_TIMEZONE: str = get_env("APP_TIMEZONE", "Europe/Moscow")
 
     @classmethod
     def ensure_dirs(cls) -> None:
@@ -102,8 +102,8 @@ class TimeConfig:
 @dataclass(frozen=True)
 class OpenAIConfig:
     api_key: str | None = field(default_factory=_df_str("OPENAI_API_KEY"))
-    model: str = field(default_factory=_df_str_nn("OPENAI_MODEL", "gpt-4o-mini"))
-    image_model: str = field(default_factory=_df_str_nn("OPENAI_IMAGE_MODEL", "gpt-image-1"))
+    model: str = field(default_factory=_df_str_nn("OPENAI_MODEL", "gpt-5"))
+    image_model: str = field(default_factory=_df_str_nn("OPENAI_IMAGE_MODEL", "dall-e-3"))
 
 
 @dataclass(frozen=True)

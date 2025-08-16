@@ -61,12 +61,14 @@ def llm_is_duplicate(
     )
 
     try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            temperature=0.0,
-            max_tokens=2,
-        )
+        kwargs = {
+            "model": model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "max_tokens": 2,
+        }
+        if ("gpt-5" not in model) and ("thinking" not in model):
+            kwargs["temperature"] = 0.0
+        resp = client.chat.completions.create(**kwargs)
         answer = (resp.choices[0].message.content or "").strip().lower()
         if answer.startswith("y"):
             return True
