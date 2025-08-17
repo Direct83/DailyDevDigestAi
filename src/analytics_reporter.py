@@ -22,37 +22,6 @@ from .config import Config
 from .ghost_utils import fetch_posts
 
 
-def _ghost_headers() -> dict[str, str]:
-    """Создаёт заголовок авторизации Ghost (JWT) с выравниванием времени по серверу."""
-    if not (Config.GHOST_ADMIN_API_URL and Config.GHOST_ADMIN_API_KEY):
-        return {}
-    from email.utils import parsedate_to_datetime
-
-    import jwt
-
-    base = Config.GHOST_ADMIN_API_URL.rstrip("/") + "/ghost/api/admin"
-    # Выравниваем iat/exp по серверному времени Ghost
-    try:
-        r = requests.get(base + "/site/", timeout=10)
-        date_hdr = r.headers.get("Date")
-        if date_hdr:
-            dt_ = parsedate_to_datetime(date_hdr)
-            if dt_ and dt_.tzinfo is not None:
-                server_epoch = int(dt_.timestamp())
-            else:
-                server_epoch = int(datetime.utcnow().timestamp())
-        else:
-            server_epoch = int(datetime.utcnow().timestamp())
-    except Exception:
-        server_epoch = int(datetime.utcnow().timestamp())
-
-    kid, secret = Config.GHOST_ADMIN_API_KEY.split(":", 1)
-    header = {"alg": "HS256", "typ": "JWT", "kid": kid}
-    payload = {"iat": server_epoch, "exp": server_epoch + 5 * 60, "aud": "/v5/admin/"}
-    token = jwt.encode(payload, bytes.fromhex(secret), algorithm="HS256", headers=header)
-    return {"Authorization": f"Ghost {token}"}
-
-
 def _ghost_posts_summary(days: int = 7) -> dict[str, object]:
     """Возвращает отдельные списки опубликованных за N дней, запланированных и черновиков.
 

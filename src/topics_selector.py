@@ -42,6 +42,18 @@ REDDIT_FEEDS = [
     "https://www.reddit.com/r/webdev/.rss",
 ]
 
+# Токены, указывающие на обучающий характер запроса (how-to/гайд)
+HOWTO_HINTS = [
+    "how to",
+    "tutorial",
+    "guide",
+    "step-by-step",
+    "как ",  # пробел важен, чтобы не ловить "какой"
+    "гайд",
+    "пошаг",
+    "инструкция",
+]
+
 
 def fetch_hn(limit: int = 50) -> list[TopicCandidate]:
     """Возвращает кандидатов из Hacker News (top stories) с ключевыми словами."""
@@ -141,6 +153,9 @@ def select_topic(state: StateStore | None = None) -> dict[str, object]:
 
     # LLM‑антидубли по смыслу относительно истории Ghost (20 дней)
     recent_titles = state.get_recent_titles()
+    # Если Ghost настроен, но заголовки не получены — прерываем выбор темы (во избежание дублей)
+    if Config.GHOST_ADMIN_API_URL and not recent_titles:
+        raise RuntimeError("Недоступен список последних заголовков из Ghost — выбор темы остановлен")
     filtered: list[TopicCandidate] = []
     for c in candidates:
         decision = llm_is_duplicate(c.title, recent_titles)
@@ -152,8 +167,16 @@ def select_topic(state: StateStore | None = None) -> dict[str, object]:
         filtered.append(c)
     candidates = filtered
 
+    # Буст обучающих формулировок (how-to/гайд) перед сортировкой
+    def _boost_score(c: TopicCandidate) -> float:
+        title_lc = c.title.lower()
+        boost = 0.0
+        if any(h in title_lc for h in HOWTO_HINTS):
+            boost += 0.8
+        return c.score + boost
+
     # сортировка
-    candidates.sort(key=lambda c: c.score, reverse=True)
+    candidates.sort(key=_boost_score, reverse=True)
 
     if not candidates:
         # fallback — базовая тема

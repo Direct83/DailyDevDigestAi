@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import contextlib
 import datetime as dt
-import logging
-from email.utils import parsedate_to_datetime
 
 import pytz
-import requests
 
 from .config import Config
-from .ghost_utils import ghost_admin_base, ghost_auth_headers, publish_html_post, upload_image_bytes
+from .ghost_utils import ghost_admin_base, publish_html_post, upload_image_bytes
 
 
 class GhostPublisher:
@@ -23,44 +19,6 @@ class GhostPublisher:
         if not (Config.GHOST_ADMIN_API_URL and Config.GHOST_ADMIN_API_KEY):
             raise RuntimeError("Не настроен Ghost Admin API")
         self.base = ghost_admin_base()
-
-    def _get_server_epoch(self) -> int:
-        """Пытается получить серверное время из заголовка Date у /site/.
-
-        Если не получилось — возвращает локальное UTC now.
-        """
-        try:
-            url = self.base + "/site/"
-            r = requests.get(url, timeout=10)
-            date_hdr = r.headers.get("Date")
-            if date_hdr:
-                dt_ = parsedate_to_datetime(date_hdr)
-                if dt_.tzinfo is None:
-                    dt_ = dt_.replace(tzinfo=dt.timezone.utc)
-                return int(dt_.timestamp())
-        except Exception:
-            pass
-        return int(dt.datetime.utcnow().timestamp())
-
-    def _auth_headers(self) -> dict[str, str]:
-        return ghost_auth_headers()
-
-    def upload_image_bytes(self, image_bytes: bytes, filename: str = "cover.png") -> str | None:
-        """Загружает байты изображения и возвращает URL, либо None при ошибке."""
-        try:
-            files = {"file": (filename, image_bytes, "image/png")}
-            r = requests.post(self.base + "/images/upload/", headers=self._auth_headers(), files=files, timeout=60)
-            r.raise_for_status()
-            data = r.json()
-            return data.get("images", [{}])[0].get("url")
-        except Exception:
-            with contextlib.suppress(Exception):
-                logging.warning(
-                    "Ghost upload_image error: status=%s body=%s",
-                    getattr(r, "status_code", None),
-                    str(getattr(r, "text", ""))[:300],
-                )
-            return None
 
     def publish(
         self,

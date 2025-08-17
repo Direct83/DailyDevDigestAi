@@ -44,11 +44,6 @@ def tokens(text: str) -> set[str]:
     return result
 
 
-def anchors(text: str, *, min_len: int = 7) -> set[str]:
-    """Возвращает «якорные» токены длиной не меньше `min_len`."""
-    return {t for t in tokens(text) if len(t) >= min_len}
-
-
 def is_similar(a: str, b: str) -> bool:
     """Возвращает True, если заголовки похожи по токенам.
 
@@ -93,13 +88,3 @@ def is_similar_to_recent(title: str, recent_titles: Iterable[str]) -> bool:
         if is_similar(title, t or ""):
             return True
     return False
-
-
-def anchor_freq(titles: Iterable[str], *, min_len: int = 7) -> dict[str, int]:
-    """Строит частоты якорей по списку заголовков."""
-    freq: dict[str, int] = {}
-    for t in titles:
-        for tok in tokens(t):
-            if len(tok) >= min_len:
-                freq[tok] = freq.get(tok, 0) + 1
-    return freq
